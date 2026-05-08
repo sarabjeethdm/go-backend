@@ -74,6 +74,65 @@ golang-backend-task/
 - MongoDB 4.4 or higher
 - Redis 6.0 or higher
 
+## Deployment Options
+
+The system can be deployed using either Docker Compose or Kubernetes.
+
+### Docker Compose (Local Development)
+
+For local development and testing:
+
+```bash
+# Start all services
+docker-compose up -d
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f
+
+# Stop all services
+docker-compose down
+```
+
+**Services included:**
+- API Server (port 8080)
+- Worker Service (port 9091 - metrics)
+- MongoDB (port 27017)
+- Redis (port 6379)
+- Prometheus (port 9090)
+
+See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
+
+### Kubernetes (Production-Ready)
+
+For production deployment on Kubernetes (Minikube, Kind, or Docker Desktop):
+
+```bash
+# Quick deployment
+./k8s/deploy.sh
+
+# Access API via port-forward
+kubectl port-forward -n edi-processing svc/edi-api 8080:8080
+
+# Check status
+kubectl get pods -n edi-processing
+
+# Cleanup
+./k8s/cleanup.sh
+```
+
+**Features:**
+- 2 replicas each for API and Worker (high availability)
+- Persistent storage for MongoDB, Redis, and Prometheus
+- Health checks and readiness probes
+- Resource limits and requests
+- ConfigMap for centralized configuration
+- Horizontal scaling support
+
+See [k8s/README.md](k8s/README.md) for complete Kubernetes documentation.
+
 ## Installation
 
 1. Clone the repository:
