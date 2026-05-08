@@ -5,16 +5,11 @@
 Before starting, ensure you have the following installed:
 
 ```bash
-# Check Go version (requires 1.21+)
 go version
-
-# Check Docker (recommended)
 docker --version
 docker-compose --version
-
-# Optional: For local development
-mongosh --version    # MongoDB client
-redis-cli --version  # Redis client
+mongosh --version  
+redis-cli --version
 ```
 
 ## Quick Start (30 Seconds)

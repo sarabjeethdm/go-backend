@@ -31,7 +31,6 @@ CLAIM*CLM003*MEM789*1500`
 		t.Errorf("Expected total_amount %.2f, got %.2f", expectedTotal, result.Summary.TotalAmount)
 	}
 
-	// Check first claim
 	if result.Claims[0].ClaimID != "CLM001" {
 		t.Errorf("Expected claim_id CLM001, got %s", result.Claims[0].ClaimID)
 	}
@@ -139,7 +138,6 @@ CLAIM*CLM002*MEM456*3000`
 		t.Fatalf("Expected no error for mixed content, got: %v", err)
 	}
 
-	// Should have 2 valid claims
 	if len(result.Claims) != 2 {
 		t.Errorf("Expected 2 valid claims, got %d", len(result.Claims))
 	}
@@ -177,7 +175,6 @@ CLAIM*CLM002*MEM456*3000`
 		t.Errorf("Expected 2 claims, got %d", len(result.Claims))
 	}
 
-	// First claim should have trimmed values
 	if result.Claims[0].ClaimID != "CLM001" {
 		t.Errorf("Expected trimmed claim_id CLM001, got %s", result.Claims[0].ClaimID)
 	}

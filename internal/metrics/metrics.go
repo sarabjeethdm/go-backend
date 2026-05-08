@@ -10,7 +10,6 @@ import (
 )
 
 var (
-	// JobsTotal tracks the total number of jobs by status
 	JobsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "edi_jobs_total",
@@ -19,7 +18,6 @@ var (
 		[]string{"status"},
 	)
 
-	// APIRequestsTotal tracks the total number of API requests
 	APIRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "edi_api_requests_total",
@@ -28,7 +26,6 @@ var (
 		[]string{"method", "path", "status"},
 	)
 
-	// JobProcessingDuration tracks the duration of job processing
 	JobProcessingDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "edi_job_processing_duration_seconds",
@@ -37,7 +34,6 @@ var (
 		},
 	)
 
-	// APIRequestDuration tracks the duration of API requests
 	APIRequestDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "edi_api_request_duration_seconds",
@@ -47,7 +43,6 @@ var (
 		[]string{"method", "path"},
 	)
 
-	// ActiveJobs tracks the number of currently processing jobs
 	ActiveJobs = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "edi_active_jobs",
@@ -55,7 +50,6 @@ var (
 		},
 	)
 
-	// RedisQueueSize tracks the size of the Redis queue
 	RedisQueueSize = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "edi_redis_queue_size",
@@ -63,7 +57,6 @@ var (
 		},
 	)
 
-	// EDITransactionsProcessed tracks transactions processed from EDI files
 	EDITransactionsProcessed = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "edi_transactions_processed_total",
@@ -72,7 +65,6 @@ var (
 		[]string{"transaction_type"},
 	)
 
-	// JobRetries tracks the number of job retries
 	JobRetries = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "edi_job_retries_total",
@@ -82,69 +74,53 @@ var (
 	)
 )
 
-// Init initializes the metrics system
-// This is a placeholder for future initialization needs
 func Init() {
-	// Currently, promauto registers metrics automatically
-	// This function is here for future extensions like custom registries
 }
 
-// RecordJobCreated increments the counter for created jobs
 func RecordJobCreated() {
 	JobsTotal.WithLabelValues("created").Inc()
 }
 
-// RecordJobCompleted increments the counter for completed jobs
 func RecordJobCompleted() {
 	JobsTotal.WithLabelValues("completed").Inc()
 }
 
-// RecordJobFailed increments the counter for failed jobs
 func RecordJobFailed() {
 	JobsTotal.WithLabelValues("failed").Inc()
 }
 
-// RecordJobProcessing increments the counter for processing jobs
 func RecordJobProcessing() {
 	JobsTotal.WithLabelValues("processing").Inc()
 }
 
-// RecordAPIRequest records an API request with method, path, and status
 func RecordAPIRequest(method, path string, status int) {
 	APIRequestsTotal.WithLabelValues(method, path, http.StatusText(status)).Inc()
 }
 
-// RecordJobProcessingDuration records the duration of job processing
 func RecordJobProcessingDuration(duration time.Duration) {
 	JobProcessingDuration.Observe(duration.Seconds())
 }
 
-// RecordAPIRequestDuration records the duration of an API request
 func RecordAPIRequestDuration(method, path string, duration time.Duration) {
 	APIRequestDuration.WithLabelValues(method, path).Observe(duration.Seconds())
 }
 
-// IncrementActiveJobs increments the active jobs gauge
 func IncrementActiveJobs() {
 	ActiveJobs.Inc()
 }
 
-// DecrementActiveJobs decrements the active jobs gauge
 func DecrementActiveJobs() {
 	ActiveJobs.Dec()
 }
 
-// SetRedisQueueSize sets the current Redis queue size
 func SetRedisQueueSize(size float64) {
 	RedisQueueSize.Set(size)
 }
 
-// RecordEDITransaction records a processed EDI transaction
 func RecordEDITransaction(transactionType string) {
 	EDITransactionsProcessed.WithLabelValues(transactionType).Inc()
 }
 
-// RecordJobRetry records a job retry attempt
 func RecordJobRetry(retryCount int) {
 	JobRetries.WithLabelValues(fmt.Sprintf("%d", retryCount)).Inc()
 }

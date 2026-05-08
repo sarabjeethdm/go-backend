@@ -12,14 +12,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Processor handles job processing
 type Processor struct {
 	storage    *storage.Storage
 	log        *logger.Logger
 	maxRetries int
 }
 
-// NewProcessor creates a new Processor instance
 func NewProcessor(storage *storage.Storage, log *logger.Logger, maxRetries int) *Processor {
 	return &Processor{
 		storage:    storage,
@@ -28,13 +26,11 @@ func NewProcessor(storage *storage.Storage, log *logger.Logger, maxRetries int) 
 	}
 }
 
-// ProcessJob processes a single job
 func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent string) error {
 	p.log.WithFields(logrus.Fields{
 		"job_id": jobID,
 	}).Info("Starting job processing")
 
-	// Get the job from storage
 	job, err := p.storage.GetJob(ctx, jobID)
 	if err != nil {
 		p.log.WithFields(logrus.Fields{
@@ -44,7 +40,6 @@ func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent st
 		return fmt.Errorf("failed to get job: %w", err)
 	}
 
-	// Check if job is already processing or completed
 	if job.Status != models.StatusPending {
 		p.log.WithFields(logrus.Fields{
 			"job_id": jobID,
@@ -53,7 +48,6 @@ func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent st
 		return nil
 	}
 
-	// Update status to processing
 	if err := p.storage.UpdateJobStatus(ctx, jobID, models.StatusProcessing); err != nil {
 		p.log.WithFields(logrus.Fields{
 			"job_id": jobID,
@@ -66,7 +60,6 @@ func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent st
 		"job_id": jobID,
 	}).Info("Job status updated to processing")
 
-	// If file content is not provided (legacy case), fail the job
 	if fileContent == "" {
 		p.log.WithFields(logrus.Fields{
 			"job_id": jobID,
@@ -81,7 +74,6 @@ func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent st
 		return fmt.Errorf("file content not available")
 	}
 
-	// Parse the EDI file content
 	result, err := parser.ParseEDI(fileContent)
 	if err != nil {
 		p.log.WithFields(logrus.Fields{
@@ -89,7 +81,6 @@ func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent st
 			"error":  err.Error(),
 		}).Error("Failed to parse EDI file")
 
-		// Check if we should retry
 		if job.RetryCount < p.maxRetries {
 			p.log.WithFields(logrus.Fields{
 				"job_id":      jobID,
@@ -97,7 +88,6 @@ func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent st
 				"max_retries": p.maxRetries,
 			}).Info("Marking job for retry")
 
-			// Update job status back to pending for retry
 			if updateErr := p.storage.UpdateJobStatus(ctx, jobID, models.StatusPending); updateErr != nil {
 				p.log.WithFields(logrus.Fields{
 					"job_id": jobID,
@@ -105,7 +95,6 @@ func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent st
 				}).Error("Failed to update job status for retry")
 			}
 
-			// Increment retry count
 			if incrErr := p.storage.IncrementRetryCount(ctx, jobID); incrErr != nil {
 				p.log.WithFields(logrus.Fields{
 					"job_id": jobID,
@@ -116,7 +105,6 @@ func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent st
 			return fmt.Errorf("parsing failed, job marked for retry: %w", err)
 		}
 
-		// Max retries exceeded, mark as failed
 		p.log.WithFields(logrus.Fields{
 			"job_id":      jobID,
 			"retry_count": job.RetryCount,
@@ -140,7 +128,6 @@ func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent st
 		"total_amount": result.Summary.TotalAmount,
 	}).Info("Successfully parsed EDI file")
 
-	// Update job with result
 	if err := p.storage.UpdateJobWithResult(ctx, jobID, models.StatusCompleted, result, ""); err != nil {
 		p.log.WithFields(logrus.Fields{
 			"job_id": jobID,
@@ -156,14 +143,11 @@ func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent st
 	return nil
 }
 
-// GetJob retrieves a job from storage
 func (p *Processor) GetJob(ctx context.Context, jobID string) (*models.Job, error) {
 	return p.storage.GetJob(ctx, jobID)
 }
 
-// CalculateBackoff calculates exponential backoff duration
 func (p *Processor) CalculateBackoff(retryCount int, initialBackoff int) time.Duration {
-	// Exponential backoff: 2^retryCount * initialBackoff seconds
 	backoffSeconds := (1 << uint(retryCount)) * initialBackoff
 	return time.Duration(backoffSeconds) * time.Second
 }

@@ -20,15 +20,12 @@ import (
 )
 
 func main() {
-	// Initialize logger
 	logger.Init()
 	logger.Info("Starting EDI Processing API Server")
 
-	// Initialize metrics
 	metrics.Init()
 	logger.Info("Metrics initialized")
 
-	// Load configuration
 	cfg := config.Load()
 	logger.WithFields(map[string]interface{}{
 		"port":        cfg.Server.Port,
@@ -37,7 +34,6 @@ func main() {
 		"redis_port":  cfg.Redis.Port,
 	}).Info("Configuration loaded")
 
-	// Initialize MongoDB
 	db, err := storage.NewMongoDB(&cfg.MongoDB)
 	if err != nil {
 		logger.Fatalf("Failed to initialize MongoDB: %v", err)
@@ -50,14 +46,12 @@ func main() {
 		}
 	}()
 
-	// Create indexes
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	if err := db.CreateIndexes(ctx); err != nil {
 		logger.Warnf("Failed to create MongoDB indexes: %v", err)
 	}
 	cancel()
 
-	// Initialize Redis queue
 	redisQueue, err := queue.NewRedisQueue(&cfg.Redis)
 	if err != nil {
 		logger.Fatalf("Failed to initialize Redis queue: %v", err)
@@ -68,14 +62,11 @@ func main() {
 		}
 	}()
 
-	// Setup router
 	router := api.SetupRouter(db, redisQueue)
 
-	// Add Prometheus metrics endpoint
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	logger.Info("Metrics endpoint configured at /metrics")
 
-	// Create HTTP server
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Server.Port),
 		Handler:      router,
@@ -83,7 +74,6 @@ func main() {
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
-	// Start server in a goroutine
 	go func() {
 		logger.WithFields(map[string]interface{}{
 			"port": cfg.Server.Port,
@@ -94,14 +84,12 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal for graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logger.Info("Shutting down server...")
 
-	// Graceful shutdown with timeout
 	ctx, cancel = context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 

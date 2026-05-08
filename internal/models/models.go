@@ -6,7 +6,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// JobStatus represents the status of a job
 type JobStatus string
 
 const (
@@ -16,7 +15,6 @@ const (
 	StatusFailed     JobStatus = "failed"
 )
 
-// Job represents an EDI file processing job
 type Job struct {
 	ID         primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	JobID      string             `bson:"job_id" json:"job_id"`
@@ -29,29 +27,25 @@ type Job struct {
 	UpdatedAt  time.Time          `bson:"updated_at" json:"updated_at"`
 }
 
-// Claim represents a parsed EDI claim
 type Claim struct {
 	ClaimID  string  `bson:"claim_id" json:"claim_id"`
 	MemberID string  `bson:"member_id" json:"member_id"`
 	Amount   float64 `bson:"amount" json:"amount"`
 }
 
-// Summary represents the summary of parsed claims
 type Summary struct {
 	TotalClaims int     `bson:"total_claims" json:"total_claims"`
 	TotalAmount float64 `bson:"total_amount" json:"total_amount"`
 }
 
-// Result represents the parsed EDI file result
 type Result struct {
 	Claims  []Claim `bson:"claims" json:"claims"`
 	Summary Summary `bson:"summary" json:"summary"`
 }
 
-// NewJob creates a new job instance
 func NewJob(jobID, fileName string) *Job {
 	return &Job{
-		ID:         primitive.ObjectID{}, // Will be set by MongoDB
+		ID:         primitive.ObjectID{},
 		JobID:      jobID,
 		FileName:   fileName,
 		Status:     StatusPending,
@@ -61,14 +55,12 @@ func NewJob(jobID, fileName string) *Job {
 	}
 }
 
-// UpdateStatus updates the job status and error message
 func (j *Job) UpdateStatus(status JobStatus, errorMsg string) {
 	j.Status = status
 	j.Error = errorMsg
 	j.UpdatedAt = time.Now()
 }
 
-// JobResponse represents the job status response
 type JobResponse struct {
 	JobID      string    `json:"job_id"`
 	Status     JobStatus `json:"status"`
@@ -79,7 +71,6 @@ type JobResponse struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-// ToResponse converts Job to JobResponse
 func (j *Job) ToResponse() *JobResponse {
 	return &JobResponse{
 		JobID:      j.ID.Hex(),
@@ -92,7 +83,6 @@ func (j *Job) ToResponse() *JobResponse {
 	}
 }
 
-// ResultResponse represents the result response
 type ResultResponse struct {
 	JobID   string  `json:"job_id"`
 	Status  string  `json:"status"`
@@ -100,7 +90,6 @@ type ResultResponse struct {
 	Summary Summary `json:"summary"`
 }
 
-// ToResponse converts Result to ResultResponse
 func (r *Result) ToResponse() *ResultResponse {
 	return &ResultResponse{
 		Status:  "completed",

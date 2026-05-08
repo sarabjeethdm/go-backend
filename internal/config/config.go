@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// Config holds all configuration for the worker service
 type Config struct {
 	MongoDB MongoDBConfig
 	Redis   RedisConfig
@@ -14,13 +13,11 @@ type Config struct {
 	Server  ServerConfig
 }
 
-// MongoDBConfig holds MongoDB configuration
 type MongoDBConfig struct {
 	URI      string
 	Database string
 }
 
-// RedisConfig holds Redis configuration
 type RedisConfig struct {
 	Host     string
 	Port     int
@@ -28,15 +25,13 @@ type RedisConfig struct {
 	DB       int
 }
 
-// WorkerConfig holds worker-specific configuration
 type WorkerConfig struct {
 	MaxRetries      int
-	PollInterval    int // in seconds
-	InitialBackoff  int // in seconds
-	ShutdownTimeout int // in seconds
+	PollInterval    int
+	InitialBackoff  int
+	ShutdownTimeout int
 }
 
-// ServerConfig holds API server configuration
 type ServerConfig struct {
 	Port            string
 	ReadTimeout     time.Duration
@@ -44,7 +39,6 @@ type ServerConfig struct {
 	ShutdownTimeout time.Duration
 }
 
-// Load loads configuration from environment variables with defaults
 func Load() *Config {
 	return &Config{
 		MongoDB: MongoDBConfig{
@@ -72,7 +66,6 @@ func Load() *Config {
 	}
 }
 
-// getEnv gets an environment variable or returns a default value
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -80,7 +73,6 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// getEnvAsInt gets an environment variable as an integer or returns a default value
 func getEnvAsInt(key string, defaultValue int) int {
 	valueStr := os.Getenv(key)
 	if valueStr == "" {

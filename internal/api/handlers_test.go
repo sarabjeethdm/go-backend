@@ -17,7 +17,6 @@ import (
 	"github.com/sarabjeet/golang-backend-task/internal/queue"
 )
 
-// MockMongoDB is a mock implementation of MongoDB storage
 type MockMongoDB struct {
 	jobs          map[string]*models.Job
 	results       map[string]*models.Result
@@ -33,7 +32,6 @@ func NewMockMongoDB() *MockMongoDB {
 		results: make(map[string]*models.Result),
 	}
 
-	// Set default implementations
 	mock.SaveJobFunc = func(ctx context.Context, job *models.Job) error {
 		jobID := uuid.New().String()
 		mock.jobs[jobID] = job
@@ -82,7 +80,6 @@ func (m *MockMongoDB) UpdateJob(ctx context.Context, job *models.Job) error {
 	return m.UpdateJobFunc(ctx, job)
 }
 
-// MockRedisQueue is a mock implementation of Redis queue
 type MockRedisQueue struct {
 	messages    []*queue.JobMessage
 	EnqueueFunc func(ctx context.Context, jobMsg *queue.JobMessage) error
@@ -150,7 +147,6 @@ func TestCreateJobHandler_Success(t *testing.T) {
 	q := NewMockRedisQueue()
 	router := setupTestRouter(db, q)
 
-	// Create a multipart form with a file
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
@@ -181,7 +177,6 @@ func TestCreateJobHandler_Success(t *testing.T) {
 		t.Error("Expected non-empty job ID")
 	}
 
-	// Verify job was enqueued
 	if len(q.messages) != 1 {
 		t.Errorf("Expected 1 message in queue, got %d", len(q.messages))
 	}
@@ -215,7 +210,6 @@ func TestCreateJobHandler_EmptyFile(t *testing.T) {
 	q := NewMockRedisQueue()
 	router := setupTestRouter(db, q)
 
-	// Create a multipart form with an empty file
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
@@ -249,7 +243,6 @@ func TestCreateJobHandler_DatabaseError(t *testing.T) {
 	db := NewMockMongoDB()
 	q := NewMockRedisQueue()
 
-	// Mock database error
 	db.SaveJobFunc = func(ctx context.Context, job *models.Job) error {
 		return fmt.Errorf("database connection error")
 	}
@@ -289,7 +282,6 @@ func TestCreateJobHandler_QueueError(t *testing.T) {
 	db := NewMockMongoDB()
 	q := NewMockRedisQueue()
 
-	// Mock queue error
 	q.EnqueueFunc = func(ctx context.Context, jobMsg *queue.JobMessage) error {
 		return fmt.Errorf("redis connection error")
 	}
@@ -329,7 +321,6 @@ func TestGetJobHandler_Success(t *testing.T) {
 	db := NewMockMongoDB()
 	q := NewMockRedisQueue()
 
-	// Create a test job
 	jobID := uuid.New().String()
 	testJob := &models.Job{
 		Status:     models.StatusPending,
@@ -402,7 +393,6 @@ func TestGetResultHandler_Success(t *testing.T) {
 	db := NewMockMongoDB()
 	q := NewMockRedisQueue()
 
-	// Create a completed job with result
 	jobID := uuid.New().String()
 	testResult := &models.Result{
 		Claims: []models.Claim{
@@ -439,7 +429,6 @@ func TestGetResultHandler_JobNotCompleted(t *testing.T) {
 	db := NewMockMongoDB()
 	q := NewMockRedisQueue()
 
-	// Create a pending job
 	jobID := uuid.New().String()
 	testJob := &models.Job{
 		Status:     models.StatusPending,

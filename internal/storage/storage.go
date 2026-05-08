@@ -18,27 +18,22 @@ const (
 	resultsCollection = "results"
 )
 
-// Storage handles MongoDB operations
 type Storage struct {
 	client *mongo.Client
 	db     *mongo.Database
 }
 
-// MongoDB is an alias for Storage to match handler expectations
 type MongoDB = Storage
 
-// New creates a new Storage instance
 func New(cfg *config.Config) (*Storage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Connect to MongoDB
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoDB.URI))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
 	}
 
-	// Ping the database
 	if err := client.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
 	}
@@ -51,18 +46,15 @@ func New(cfg *config.Config) (*Storage, error) {
 	}, nil
 }
 
-// NewMongoDB creates a new MongoDB instance (alias for New)
 func NewMongoDB(cfg *config.MongoDBConfig) (*MongoDB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Connect to MongoDB
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(cfg.URI))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
 	}
 
-	// Ping the database
 	if err := client.Ping(ctx, nil); err != nil {
 		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
 	}
@@ -75,14 +67,11 @@ func NewMongoDB(cfg *config.MongoDBConfig) (*MongoDB, error) {
 	}, nil
 }
 
-// Close closes the MongoDB connection
 func (s *Storage) Close(ctx context.Context) error {
 	return s.client.Disconnect(ctx)
 }
 
-// CreateIndexes creates necessary indexes
 func (s *Storage) CreateIndexes(ctx context.Context) error {
-	// Create unique index on job_id for job lookups
 	jobIDIndex := mongo.IndexModel{
 		Keys:    bson.D{{Key: "job_id", Value: 1}},
 		Options: options.Index().SetUnique(true),
@@ -92,7 +81,6 @@ func (s *Storage) CreateIndexes(ctx context.Context) error {
 		return fmt.Errorf("failed to create job_id index: %w", err)
 	}
 
-	// Create index on status for job queries
 	statusIndex := mongo.IndexModel{
 		Keys: bson.D{{Key: "status", Value: 1}},
 	}
@@ -104,7 +92,6 @@ func (s *Storage) CreateIndexes(ctx context.Context) error {
 	return nil
 }
 
-// GetJob retrieves a job by ID
 func (s *Storage) GetJob(ctx context.Context, jobID string) (*models.Job, error) {
 	var job models.Job
 	err := s.db.Collection(jobsCollection).FindOne(ctx, bson.M{"job_id": jobID}).Decode(&job)
@@ -118,7 +105,6 @@ func (s *Storage) GetJob(ctx context.Context, jobID string) (*models.Job, error)
 	return &job, nil
 }
 
-// SaveJob saves a new job to the database
 func (s *Storage) SaveJob(ctx context.Context, job *models.Job) error {
 	if job.ID.IsZero() {
 		job.ID = primitive.NewObjectID()
@@ -138,7 +124,6 @@ func (s *Storage) SaveJob(ctx context.Context, job *models.Job) error {
 	return nil
 }
 
-// UpdateJob updates an existing job
 func (s *Storage) UpdateJob(ctx context.Context, job *models.Job) error {
 	job.UpdatedAt = time.Now()
 
@@ -157,7 +142,6 @@ func (s *Storage) UpdateJob(ctx context.Context, job *models.Job) error {
 	return nil
 }
 
-// UpdateJobStatus updates the status of a job
 func (s *Storage) UpdateJobStatus(ctx context.Context, jobID string, status models.JobStatus) error {
 	update := bson.M{
 		"$set": bson.M{
@@ -182,7 +166,6 @@ func (s *Storage) UpdateJobStatus(ctx context.Context, jobID string, status mode
 	return nil
 }
 
-// UpdateJobWithResult updates a job with processing result
 func (s *Storage) UpdateJobWithResult(ctx context.Context, jobID string, status models.JobStatus, result *models.Result, errorMsg string) error {
 	update := bson.M{
 		"$set": bson.M{
@@ -213,7 +196,6 @@ func (s *Storage) UpdateJobWithResult(ctx context.Context, jobID string, status 
 	return nil
 }
 
-// GetResult retrieves the result for a completed job
 func (s *Storage) GetResult(ctx context.Context, jobID string) (*models.Result, error) {
 	job, err := s.GetJob(ctx, jobID)
 	if err != nil {
@@ -227,7 +209,6 @@ func (s *Storage) GetResult(ctx context.Context, jobID string) (*models.Result, 
 	return job.Result, nil
 }
 
-// IncrementRetryCount increments the retry count for a job
 func (s *Storage) IncrementRetryCount(ctx context.Context, jobID string) error {
 	update := bson.M{
 		"$inc": bson.M{
@@ -254,7 +235,6 @@ func (s *Storage) IncrementRetryCount(ctx context.Context, jobID string) error {
 	return nil
 }
 
-// CreateJob creates a new job
 func (s *Storage) CreateJob(ctx context.Context, job *models.Job) (string, error) {
 	if job.ID.IsZero() {
 		job.ID = primitive.NewObjectID()

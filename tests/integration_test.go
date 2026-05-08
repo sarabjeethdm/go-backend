@@ -15,7 +15,6 @@ const (
 	baseURL = "http://localhost:8080"
 )
 
-// Skip integration tests if services are not running
 func skipIfServicesNotAvailable(t *testing.T) {
 	resp, err := http.Get(baseURL + "/health")
 	if err != nil || resp.StatusCode != http.StatusOK {
@@ -51,13 +50,11 @@ type ResultResponse struct {
 func TestIntegration_EndToEndJobProcessing(t *testing.T) {
 	skipIfServicesNotAvailable(t)
 
-	// Read test fixture
 	fileContent, err := os.ReadFile("fixtures/valid.edi")
 	if err != nil {
 		t.Fatalf("Failed to read test fixture: %v", err)
 	}
 
-	// Step 1: Upload EDI file
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
@@ -98,8 +95,7 @@ func TestIntegration_EndToEndJobProcessing(t *testing.T) {
 	jobID := jobResp.JobID
 	t.Logf("Created job with ID: %s", jobID)
 
-	// Step 2: Poll job status until completed or failed
-	maxAttempts := 30 // 30 seconds max
+	maxAttempts := 30
 	var finalStatus string
 
 	for i := 0; i < maxAttempts; i++ {
@@ -129,7 +125,6 @@ func TestIntegration_EndToEndJobProcessing(t *testing.T) {
 		t.Fatalf("Job did not complete in time. Final status: %s", finalStatus)
 	}
 
-	// Step 3: Retrieve result
 	resp, err = client.Get(baseURL + "/jobs/" + jobID + "/result")
 	if err != nil {
 		t.Fatalf("Failed to get job result: %v", err)
@@ -146,12 +141,11 @@ func TestIntegration_EndToEndJobProcessing(t *testing.T) {
 		t.Fatalf("Failed to decode result response: %v", err)
 	}
 
-	// Verify result
 	if resultResp.Summary.TotalClaims != 5 {
 		t.Errorf("Expected 5 claims, got %d", resultResp.Summary.TotalClaims)
 	}
 
-	expectedAmount := 13000.0 // Sum of amounts in valid.edi
+	expectedAmount := 13000.0
 	if resultResp.Summary.TotalAmount != expectedAmount {
 		t.Errorf("Expected total amount %.2f, got %.2f", expectedAmount, resultResp.Summary.TotalAmount)
 	}
@@ -166,13 +160,11 @@ func TestIntegration_EndToEndJobProcessing(t *testing.T) {
 func TestIntegration_InvalidEDIFile(t *testing.T) {
 	skipIfServicesNotAvailable(t)
 
-	// Read invalid test fixture
 	fileContent, err := os.ReadFile("fixtures/invalid.edi")
 	if err != nil {
 		t.Fatalf("Failed to read test fixture: %v", err)
 	}
 
-	// Upload invalid EDI file
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
@@ -213,8 +205,7 @@ func TestIntegration_InvalidEDIFile(t *testing.T) {
 	jobID := jobResp.JobID
 	t.Logf("Created job with ID: %s", jobID)
 
-	// Poll job status - should eventually fail after retries
-	maxAttempts := 60 // Allow time for retries
+	maxAttempts := 60
 	var finalStatus string
 
 	for i := 0; i < maxAttempts; i++ {
@@ -276,13 +267,11 @@ func TestIntegration_HealthCheck(t *testing.T) {
 func TestIntegration_ConcurrentJobSubmissions(t *testing.T) {
 	skipIfServicesNotAvailable(t)
 
-	// Read test fixture
 	fileContent, err := os.ReadFile("fixtures/valid.edi")
 	if err != nil {
 		t.Fatalf("Failed to read test fixture: %v", err)
 	}
 
-	// Submit multiple jobs concurrently
 	numJobs := 5
 	jobIDs := make(chan string, numJobs)
 	errors := make(chan error, numJobs)
@@ -335,7 +324,6 @@ func TestIntegration_ConcurrentJobSubmissions(t *testing.T) {
 		}(i)
 	}
 
-	// Collect results
 	var successfulJobs []string
 	for i := 0; i < numJobs; i++ {
 		select {
@@ -358,7 +346,6 @@ func TestIntegration_ConcurrentJobSubmissions(t *testing.T) {
 func TestIntegration_JobNotFound(t *testing.T) {
 	skipIfServicesNotAvailable(t)
 
-	// Try to get a non-existent job
 	fakeJobID := "00000000-0000-0000-0000-000000000000"
 
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -375,15 +362,8 @@ func TestIntegration_JobNotFound(t *testing.T) {
 	t.Log("Job not found test passed")
 }
 
-// TestMain provides setup and teardown for integration tests
 func TestMain(m *testing.M) {
-	// Optional: Add setup code here
-	// For example, wait for services to be ready
-
-	// Run tests
 	code := m.Run()
-
-	// Optional: Add cleanup code here
 
 	os.Exit(code)
 }

@@ -16,13 +16,11 @@ import (
 	"github.com/sarabjeet/golang-backend-task/internal/storage"
 )
 
-// Handler holds dependencies for HTTP handlers
 type Handler struct {
 	db    *storage.MongoDB
 	queue *queue.RedisQueue
 }
 
-// NewHandler creates a new handler
 func NewHandler(db *storage.MongoDB, q *queue.RedisQueue) *Handler {
 	return &Handler{
 		db:    db,
@@ -30,26 +28,22 @@ func NewHandler(db *storage.MongoDB, q *queue.RedisQueue) *Handler {
 	}
 }
 
-// HealthResponse represents the health check response
 type HealthResponse struct {
 	Status    string    `json:"status"`
 	Timestamp time.Time `json:"timestamp"`
 	Service   string    `json:"service"`
 }
 
-// ErrorResponse represents an error response
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message"`
 }
 
-// CreateJobResponse represents the create job response
 type CreateJobResponse struct {
 	JobID   string `json:"job_id"`
 	Message string `json:"message"`
 }
 
-// HealthCheck handles the health check endpoint
 func (h *Handler) HealthCheck(c *gin.Context) {
 	logger.WithFields(map[string]interface{}{
 		"method": c.Request.Method,
@@ -63,14 +57,12 @@ func (h *Handler) HealthCheck(c *gin.Context) {
 	})
 }
 
-// CreateJob handles the POST /jobs endpoint for uploading EDI files
 func (h *Handler) CreateJob(c *gin.Context) {
 	logger.WithFields(map[string]interface{}{
 		"method": c.Request.Method,
 		"path":   c.Request.URL.Path,
 	}).Info("Create job request")
 
-	// Parse multipart form
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
 		logger.WithFields(map[string]interface{}{
@@ -84,7 +76,6 @@ func (h *Handler) CreateJob(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// Validate file size (10MB max by default)
 	if header.Size > 10*1024*1024 {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "file_too_large",
@@ -93,7 +84,6 @@ func (h *Handler) CreateJob(c *gin.Context) {
 		return
 	}
 
-	// Read file content
 	content, err := io.ReadAll(file)
 	if err != nil {
 		logger.WithFields(map[string]interface{}{
@@ -109,7 +99,6 @@ func (h *Handler) CreateJob(c *gin.Context) {
 
 	fileContent := string(content)
 
-	// Validate file content (basic validation - check if it's not empty)
 	if strings.TrimSpace(fileContent) == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "invalid_file",
@@ -118,13 +107,10 @@ func (h *Handler) CreateJob(c *gin.Context) {
 		return
 	}
 
-	// Generate job ID
 	jobID := uuid.New().String()
 
-	// Create job
 	job := models.NewJob(jobID, header.Filename)
 
-	// Save job to MongoDB (without file content)
 	if err := h.db.SaveJob(c.Request.Context(), job); err != nil {
 		logger.WithFields(map[string]interface{}{
 			"error":  err.Error(),
@@ -137,7 +123,6 @@ func (h *Handler) CreateJob(c *gin.Context) {
 		return
 	}
 
-	// Create job message for queue
 	jobMsg := &queue.JobMessage{
 		JobID:       jobID,
 		FileName:    header.Filename,
@@ -145,14 +130,12 @@ func (h *Handler) CreateJob(c *gin.Context) {
 		CreatedAt:   time.Now(),
 	}
 
-	// Enqueue job
 	if err := h.queue.Enqueue(c.Request.Context(), jobMsg); err != nil {
 		logger.WithFields(map[string]interface{}{
 			"error":  err.Error(),
 			"job_id": jobID,
 		}).Error("Failed to enqueue job")
 
-		// Update job status to failed
 		job.UpdateStatus(models.StatusFailed, "Failed to enqueue job")
 		h.db.UpdateJob(c.Request.Context(), job)
 
@@ -169,7 +152,6 @@ func (h *Handler) CreateJob(c *gin.Context) {
 		"file_size": header.Size,
 	}).Info("Job created and enqueued successfully")
 
-	// Record metrics for job creation
 	metrics.RecordJobCreated()
 
 	c.JSON(http.StatusCreated, CreateJobResponse{
@@ -178,7 +160,6 @@ func (h *Handler) CreateJob(c *gin.Context) {
 	})
 }
 
-// GetJobStatus handles the GET /jobs/:job_id endpoint
 func (h *Handler) GetJobStatus(c *gin.Context) {
 	jobID := c.Param("job_id")
 
@@ -188,7 +169,6 @@ func (h *Handler) GetJobStatus(c *gin.Context) {
 		"job_id": jobID,
 	}).Info("Get job status request")
 
-	// Validate job ID format
 	if _, err := uuid.Parse(jobID); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "invalid_job_id",
@@ -197,7 +177,6 @@ func (h *Handler) GetJobStatus(c *gin.Context) {
 		return
 	}
 
-	// Get job from database
 	job, err := h.db.GetJob(c.Request.Context(), jobID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -223,7 +202,6 @@ func (h *Handler) GetJobStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, job.ToResponse())
 }
 
-// GetJobResult handles the GET /jobs/:job_id/result endpoint
 func (h *Handler) GetJobResult(c *gin.Context) {
 	jobID := c.Param("job_id")
 
@@ -265,7 +243,6 @@ func (h *Handler) GetJobResult(c *gin.Context) {
 		return
 	}
 
-	// Check job status
 	if job.Status != models.StatusCompleted {
 		c.JSON(http.StatusOK, gin.H{
 			"job_id":  jobID,
@@ -275,7 +252,6 @@ func (h *Handler) GetJobResult(c *gin.Context) {
 		return
 	}
 
-	// Get result from database
 	result, err := h.db.GetResult(c.Request.Context(), jobID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {

@@ -8,8 +8,6 @@ import (
 	"github.com/sarabjeet/golang-backend-task/internal/models"
 )
 
-// ParseEDI parses EDI file content and returns a Result
-// Expected format: CLAIM*claim_id*member_id*amount
 func ParseEDI(content string) (*models.Result, error) {
 	if content == "" {
 		return nil, fmt.Errorf("empty file content")
@@ -21,13 +19,11 @@ func ParseEDI(content string) (*models.Result, error) {
 	var parseErrors []string
 
 	for lineNum, line := range lines {
-		// Skip empty lines
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 
-		// Parse the line
 		claim, err := parseLine(line)
 		if err != nil {
 			parseErrors = append(parseErrors, fmt.Sprintf("line %d: %s", lineNum+1, err.Error()))
@@ -38,8 +34,6 @@ func ParseEDI(content string) (*models.Result, error) {
 		totalAmount += claim.Amount
 	}
 
-	// If we have parse errors but also some valid claims, we still return the valid data
-	// If we have parse errors and no valid claims, return an error
 	if len(claims) == 0 {
 		if len(parseErrors) > 0 {
 			return nil, fmt.Errorf("failed to parse any valid claims: %s", strings.Join(parseErrors, "; "))
@@ -58,8 +52,6 @@ func ParseEDI(content string) (*models.Result, error) {
 	return result, nil
 }
 
-// parseLine parses a single EDI line
-// Expected format: CLAIM*claim_id*member_id*amount
 func parseLine(line string) (*models.Claim, error) {
 	parts := strings.Split(line, "*")
 
@@ -67,24 +59,20 @@ func parseLine(line string) (*models.Claim, error) {
 		return nil, fmt.Errorf("invalid format: expected 4 fields separated by *, got %d fields", len(parts))
 	}
 
-	// Validate first field is "CLAIM"
 	if strings.ToUpper(strings.TrimSpace(parts[0])) != "CLAIM" {
 		return nil, fmt.Errorf("invalid record type: expected 'CLAIM', got '%s'", parts[0])
 	}
 
-	// Extract claim ID
 	claimID := strings.TrimSpace(parts[1])
 	if claimID == "" {
 		return nil, fmt.Errorf("empty claim ID")
 	}
 
-	// Extract member ID
 	memberID := strings.TrimSpace(parts[2])
 	if memberID == "" {
 		return nil, fmt.Errorf("empty member ID")
 	}
 
-	// Parse amount
 	amountStr := strings.TrimSpace(parts[3])
 	amount, err := strconv.ParseFloat(amountStr, 64)
 	if err != nil {
