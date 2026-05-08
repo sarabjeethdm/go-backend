@@ -1,0 +1,41 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'edi-processing'
+    environment: 'docker-compose'
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - alertmanager:9093
+
+# Load rules
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Scrape EDI API service
+  - job_name: 'edi-api'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          service: 'api'
+          environment: 'docker-compose'
+    # For Linux, use the following instead:
+    # - targets: ['172.17.0.1:8080']
+
+  # Scrape EDI Worker
+  - job_name: 'edi-worker'
+    static_configs:
+      - targets: ['worker:9091']
+        labels:
+          service: 'worker'
+          environment: 'docker-compose'
