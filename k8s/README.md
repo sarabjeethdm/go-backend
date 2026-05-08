@@ -1,356 +1,243 @@
-# Kubernetes Deployment Guide
+# Kubernetes Deployment
 
-This guide provides complete instructions for deploying the EDI Processing System on Kubernetes (Minikube, Kind, or Docker Desktop Kubernetes).
+This directory contains basic Kubernetes manifests for deploying the EDI Processing System.
 
 ## Prerequisites
 
-### Required Tools
-- **kubectl**: Kubernetes command-line tool
-- **Docker**: For building container images
-- **One of the following**:
-  - Minikube
-  - Kind (Kubernetes in Docker)
-  - Docker Desktop with Kubernetes enabled
-
-### Verify Installation
-```bash
-kubectl version --client
-docker --version
-
-# For Minikube
-minikube version
-
-# For Kind
-kind version
-
-# For Docker Desktop
-kubectl config get-contexts
-```
+- Kubernetes cluster (Minikube, Kind, Docker Desktop, or any other)
+- kubectl installed and configured
+- Docker installed
 
 ## Quick Start
 
-### Option 1: Automated Deployment (Recommended)
+### Deploy Everything
 
 ```bash
-# Navigate to project directory
-cd golang-backend-task
-
-# Run deployment script
 ./k8s/deploy.sh
 ```
 
-The script will:
+This script will:
 1. Build Docker images for API and Worker
-2. Load images into your Kubernetes cluster
-3. Deploy all resources in order
-4. Wait for services to be ready
+2. Load images into your cluster (if using Minikube or Kind)
+3. Create namespace and all resources
+4. Wait for everything to be ready
 
-### Option 2: Manual Deployment
-
-```bash
-# Step 1: Build images
-docker build -t golang-backend-task-api:latest -f Dockerfile .
-docker build -t golang-backend-task-worker:latest -f Dockerfile.worker .
-
-# Step 2: Load images into cluster
-# For Minikube:
-minikube image load golang-backend-task-api:latest
-minikube image load golang-backend-task-worker:latest
-
-# For Kind:
-kind load docker-image golang-backend-task-api:latest
-kind load docker-image golang-backend-task-worker:latest
-
-# For Docker Desktop: Images are already available
-
-# Step 3: Deploy resources
-kubectl apply -f k8s/00-namespace.yaml
-kubectl apply -f k8s/01-configmap.yaml
-kubectl apply -f k8s/02-pvc.yaml
-kubectl apply -f k8s/03-mongodb.yaml
-kubectl apply -f k8s/04-redis.yaml
-kubectl apply -f k8s/05-api.yaml
-kubectl apply -f k8s/06-worker.yaml
-kubectl apply -f k8s/07-prometheus.yaml
-```
-
-## Accessing the Services
-
-### Port Forwarding
-
-The services are deployed as ClusterIP (internal only). Use port-forwarding to access them:
+### Access the API
 
 ```bash
-# API Server (in one terminal)
-kubectl port-forward -n edi-processing svc/edi-api 8080:8080
+# Port-forward to access the API
+kubectl port-forward -n edi svc/edi-api 8080:8080
 
-# Worker Metrics (in another terminal)
-kubectl port-forward -n edi-processing svc/edi-worker 9091:9091
-
-# Prometheus (in another terminal)
-kubectl port-forward -n edi-processing svc/prometheus 9090:9090
-
-# MongoDB (for debugging)
-kubectl port-forward -n edi-processing svc/edi-mongodb 27017:27017
-
-# Redis (for debugging)
-kubectl port-forward -n edi-processing svc/edi-redis 6379:6379
-```
-
-### Testing the API
-
-Once port-forwarding is active:
-
-```bash
-# Health check
+# In another terminal, test it
 curl http://localhost:8080/health
-
-# Create a job
-echo "CLAIM*CLM001*MEM123*2500" > test.edi
-curl -X POST http://localhost:8080/jobs -F "file=@test.edi" -F "format=X12"
-
-# Check job status (replace {job-id} with actual ID)
-curl http://localhost:8080/jobs/{job-id}
-
-# Get job result
-curl http://localhost:8080/jobs/{job-id}/result
-```
-
-## Monitoring and Debugging
-
-### Check Pod Status
-```bash
-kubectl get pods -n edi-processing
-kubectl get pods -n edi-processing -w  # Watch mode
 ```
 
 ### View Logs
+
 ```bash
 # API logs
-kubectl logs -n edi-processing -l app=edi-api -f
+kubectl logs -n edi -l app=edi-api -f
 
 # Worker logs
-kubectl logs -n edi-processing -l app=edi-worker -f
+kubectl logs -n edi -l app=edi-worker -f
 
-# MongoDB logs
-kubectl logs -n edi-processing -l app=mongodb -f
-
-# Redis logs
-kubectl logs -n edi-processing -l app=redis -f
-
-# Prometheus logs
-kubectl logs -n edi-processing -l app=prometheus -f
+# All logs
+kubectl logs -n edi --all-containers -f
 ```
 
-### Describe Resources
+### Check Status
+
 ```bash
-kubectl describe pod -n edi-processing -l app=edi-api
-kubectl describe deployment -n edi-processing edi-api
-kubectl describe service -n edi-processing edi-api
+# View all pods
+kubectl get pods -n edi
+
+# View all resources
+kubectl get all -n edi
+
+# Describe a specific pod
+kubectl describe pod <pod-name> -n edi
 ```
 
-### Get All Resources
+### Cleanup
+
 ```bash
-kubectl get all -n edi-processing
+./k8s/cleanup.sh
 ```
 
-## Architecture Overview
+## Manual Deployment
 
-```
-┌─────────────────────────────────────────────────────────┐
-│               Kubernetes Cluster                        │
-│  ┌───────────────────────────────────────────────────┐ │
-│  │         Namespace: edi-processing                 │ │
-│  │                                                   │ │
-│  │  ┌─────────────┐      ┌─────────────┐          │ │
-│  │  │   API Pod   │──┬──▶│ MongoDB Pod │          │ │
-│  │  │  (2 replicas)│  │   │   (1 replica) │          │ │
-│  │  └─────────────┘  │   └─────────────┘          │ │
-│  │         │          │          │                 │ │
-│  │         │          │    ┌─────────────┐        │ │
-│  │         │          └───▶│  Redis Pod  │        │ │
-│  │         │               │   (1 replica) │        │ │
-│  │         │               └─────────────┘        │ │
-│  │         │                      ▲                │ │
-│  │  ┌─────────────┐              │                │ │
-│  │  │ Worker Pod  │──────────────┘                │ │
-│  │  │  (2 replicas)│                               │ │
-│  │  └─────────────┘                               │ │
-│  │                                                 │ │
-│  │  ┌─────────────┐                               │ │
-│  │  │ Prometheus  │───── Scrapes Metrics          │ │
-│  │  │    Pod      │                               │ │
-│  │  └─────────────┘                               │ │
-│  └───────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────┘
-```
+If you prefer to deploy manually:
 
-## Resource Specifications
-
-### Deployments
-
-| Service | Replicas | Image | Resources |
-|---------|----------|-------|-----------|
-| API | 2 | golang-backend-task-api:latest | 128Mi-512Mi / 100m-500m |
-| Worker | 2 | golang-backend-task-worker:latest | 128Mi-512Mi / 100m-500m |
-| MongoDB | 1 | mongo:7.0 | 256Mi-512Mi / 250m-500m |
-| Redis | 1 | redis:7.2-alpine | 128Mi-256Mi / 100m-200m |
-| Prometheus | 1 | prom/prometheus:v2.50.1 | 256Mi-512Mi / 100m-500m |
-
-### Persistent Volumes
-
-| Name | Size | Used By |
-|------|------|---------|
-| mongodb-pvc | 5Gi | MongoDB |
-| redis-pvc | 1Gi | Redis |
-| prometheus-pvc | 2Gi | Prometheus |
-
-### Services
-
-| Name | Type | Port | Target Port |
-|------|------|------|-------------|
-| edi-api | ClusterIP | 8080 | 8080 |
-| edi-worker | ClusterIP | 9091 | 9091 |
-| edi-mongodb | ClusterIP | 27017 | 27017 |
-| edi-redis | ClusterIP | 6379 | 6379 |
-| prometheus | ClusterIP | 9090 | 9090 |
-
-## Configuration
-
-Application configuration is managed via ConfigMap (`edi-config`):
-
-```yaml
-MONGODB_URI: "mongodb://edi-mongodb:27017"
-MONGODB_DATABASE: "edi_processor"
-REDIS_HOST: "edi-redis"
-REDIS_PORT: "6379"
-LOG_LEVEL: "info"
-WORKER_MAX_RETRIES: "3"
-WORKER_POLL_INTERVAL: "1"
-WORKER_INITIAL_BACKOFF: "2"
-WORKER_SHUTDOWN_TIMEOUT: "30"
-METRICS_PORT: "9091"
-```
-
-To update configuration:
 ```bash
-kubectl edit configmap edi-config -n edi-processing
-# Then restart pods
-kubectl rollout restart deployment -n edi-processing
+# 1. Build images
+docker build -t edi-api:latest -f Dockerfile .
+docker build -t edi-worker:latest -f Dockerfile.worker .
+
+# 2. Load images (if using Minikube)
+minikube image load edi-api:latest
+minikube image load edi-worker:latest
+
+# 3. Apply manifests in order
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/storage.yaml
+kubectl apply -f k8s/mongodb.yaml
+kubectl apply -f k8s/redis.yaml
+kubectl apply -f k8s/api.yaml
+kubectl apply -f k8s/worker.yaml
+```
+
+## Kubernetes Resources
+
+### Namespace
+- `edi` - Isolated namespace for all resources
+
+### Storage
+- `mongodb-pvc` - 5Gi persistent volume for MongoDB
+- `redis-pvc` - 1Gi persistent volume for Redis
+
+### Databases
+- `mongodb` - MongoDB deployment (1 replica) and service
+- `redis` - Redis deployment (1 replica) and service
+
+### Applications
+- `edi-api` - API server deployment (2 replicas) and service
+- `edi-worker` - Worker deployment (2 replicas) and service
+
+### Configuration
+- `edi-config` - ConfigMap with environment variables
+
+## Resource Limits
+
+Each component has resource requests and limits:
+
+**API & Worker:**
+- Requests: 128Mi memory, 100m CPU
+- Limits: 256Mi memory, 200m CPU
+
+**MongoDB:**
+- Requests: 256Mi memory, 250m CPU
+- Limits: 512Mi memory, 500m CPU
+
+**Redis:**
+- Requests: 128Mi memory, 100m CPU
+- Limits: 256Mi memory, 200m CPU
+
+## Testing the Deployment
+
+```bash
+# 1. Port-forward the API
+kubectl port-forward -n edi svc/edi-api 8080:8080 &
+
+# 2. Test health endpoint
+curl http://localhost:8080/health
+
+# 3. Upload a sample EDI file
+curl -X POST http://localhost:8080/jobs -F "file=@sample.edi"
+
+# 4. Check job status (replace JOB_ID)
+curl http://localhost:8080/jobs/<JOB_ID>
+
+# 5. Get results
+curl http://localhost:8080/jobs/<JOB_ID>/result
 ```
 
 ## Scaling
 
-### Scale API Service
-```bash
-kubectl scale deployment edi-api -n edi-processing --replicas=3
-```
-
-### Scale Worker Service
-```bash
-kubectl scale deployment edi-worker -n edi-processing --replicas=5
-```
-
-### Horizontal Pod Autoscaler (HPA)
-```bash
-# Enable HPA for API (requires metrics-server)
-kubectl autoscale deployment edi-api -n edi-processing \
-  --cpu-percent=70 --min=2 --max=10
-```
-
-## Health Checks
-
-All deployments include health checks:
-
-### API Service
-- **Liveness**: `GET /health` every 10s
-- **Readiness**: `GET /health` every 5s
-
-### Worker Service
-- **Liveness**: `GET /metrics` every 10s
-- **Readiness**: `GET /metrics` every 5s
-
-### MongoDB
-- **Liveness**: `mongosh --eval db.adminCommand('ping')`
-- **Readiness**: Same as liveness
-
-### Redis
-- **Liveness**: `redis-cli ping`
-- **Readiness**: Same as liveness
-
-## Cleanup
-
-### Remove All Resources
+Scale the API or Worker:
 
 ```bash
-# Using cleanup script
-./k8s/cleanup.sh
+# Scale API to 3 replicas
+kubectl scale deployment edi-api -n edi --replicas=3
 
-# Or manually
-kubectl delete namespace edi-processing
+# Scale Worker to 5 replicas
+kubectl scale deployment edi-worker -n edi --replicas=5
+
+# Check status
+kubectl get pods -n edi
 ```
 
 ## Troubleshooting
 
-### Pods Not Starting
+### Pods not starting
 
 ```bash
-# Check events
-kubectl get events -n edi-processing --sort-by='.lastTimestamp'
-
 # Check pod status
-kubectl describe pod <pod-name> -n edi-processing
+kubectl get pods -n edi
+
+# Describe problematic pod
+kubectl describe pod <pod-name> -n edi
 
 # Check logs
-kubectl logs <pod-name> -n edi-processing
+kubectl logs <pod-name> -n edi
 ```
 
-### Image Pull Errors
+### Image pull errors
 
 If you see `ImagePullBackOff`:
-- For Minikube: Run `minikube image load <image-name>`
-- For Kind: Run `kind load docker-image <image-name>`
-- For Docker Desktop: Ensure images are built locally
+- Make sure images are built: `docker images | grep edi`
+- For Minikube: Run `minikube image load edi-api:latest edi-worker:latest`
+- For Kind: Run `kind load docker-image edi-api:latest edi-worker:latest`
 
-### PVC Pending
+### PVC not binding
 
 ```bash
 # Check PVC status
-kubectl get pvc -n edi-processing
+kubectl get pvc -n edi
 
-# For Minikube, ensure storage provisioner is enabled
-minikube addons enable storage-provisioner
+# If pending, check storage class
+kubectl get storageclass
 ```
 
-### Service Connection Issues
+For Minikube/Kind, storage should work automatically. For other clusters, you may need to configure a storage class.
+
+### Connection refused errors
+
+Make sure services can reach each other:
 
 ```bash
-# Test DNS resolution
-kubectl run -it --rm debug --image=busybox -n edi-processing -- nslookup edi-mongodb
+# Test from API pod to MongoDB
+kubectl exec -n edi deployment/edi-api -- nc -zv mongodb 27017
 
-# Test connectivity
-kubectl run -it --rm debug --image=busybox -n edi-processing -- wget -O- http://edi-api:8080/health
+# Test from API pod to Redis
+kubectl exec -n edi deployment/edi-api -- nc -zv redis 6379
+```
+
+## Configuration
+
+To modify configuration, edit `k8s/configmap.yaml` and reapply:
+
+```bash
+kubectl apply -f k8s/configmap.yaml
+kubectl rollout restart deployment/edi-api -n edi
+kubectl rollout restart deployment/edi-worker -n edi
 ```
 
 ## Production Considerations
 
-For production deployments, consider:
+This is a basic setup suitable for learning and development. For production:
 
-1. **Ingress Controller**: Replace port-forward with proper Ingress
-2. **TLS/SSL**: Add certificates for secure communication
-3. **Resource Limits**: Adjust based on load testing
-4. **Persistent Storage**: Use appropriate storage classes
-5. **Backup Strategy**: Regular backups of MongoDB data
-6. **Monitoring**: Full Prometheus + Grafana stack
-7. **Secrets Management**: Use Kubernetes Secrets for sensitive data
-8. **Network Policies**: Restrict pod-to-pod communication
-9. **Pod Disruption Budgets**: Ensure high availability
-10. **Affinity Rules**: Spread pods across nodes
+1. **Use a registry** - Push images to a container registry instead of local images
+2. **Add Ingress** - Set up proper ingress for external access
+3. **Add Secrets** - Move sensitive data to Kubernetes Secrets
+4. **Add persistence** - Use proper storage classes with backups
+5. **Add monitoring** - Set up Prometheus and Grafana
+6. **Add autoscaling** - Configure HPA (Horizontal Pod Autoscaler)
+7. **Add security** - Network policies, pod security policies, RBAC
+8. **Multi-replica databases** - Use StatefulSets for MongoDB and Redis
 
-## Next Steps
+## File Structure
 
-1. Set up Ingress for external access
-2. Configure Grafana dashboards
-3. Set up automated backups
-4. Implement CI/CD pipeline
-5. Configure log aggregation (ELK/Loki)
+```
+k8s/
+├── namespace.yaml      # Namespace definition
+├── configmap.yaml      # Configuration
+├── storage.yaml        # PersistentVolumeClaims
+├── mongodb.yaml        # MongoDB deployment & service
+├── redis.yaml          # Redis deployment & service
+├── api.yaml            # API deployment & service
+├── worker.yaml         # Worker deployment & service
+├── deploy.sh           # Deployment script
+├── cleanup.sh          # Cleanup script
+└── README.md           # This file
+```

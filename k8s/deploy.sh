@@ -2,78 +2,62 @@
 
 set -e
 
-echo "========================================="
-echo "EDI Processing System - Kubernetes Setup"
-echo "========================================="
-echo ""
+echo "🚀 Deploying EDI Processing System to Kubernetes..."
 
-echo "Step 1: Building Docker images..."
-echo "Building API image..."
-docker build -t golang-backend-task-api:latest -f Dockerfile .
+# Build Docker images
+echo "📦 Building Docker images..."
+docker build -t edi-api:latest -f Dockerfile .
+docker build -t edi-worker:latest -f Dockerfile.worker .
 
-echo "Building Worker image..."
-docker build -t golang-backend-task-worker:latest -f Dockerfile.worker .
-
-echo ""
-echo "Step 2: Loading images into Kubernetes..."
-
-if command -v minikube &> /dev/null; then
-    echo "Loading images into Minikube..."
-    minikube image load golang-backend-task-api:latest
-    minikube image load golang-backend-task-worker:latest
-elif command -v kind &> /dev/null; then
-    CLUSTER_NAME=${KIND_CLUSTER_NAME:-kind}
-    echo "Loading images into Kind cluster ($CLUSTER_NAME)..."
-    kind load docker-image golang-backend-task-api:latest --name $CLUSTER_NAME
-    kind load docker-image golang-backend-task-worker:latest --name $CLUSTER_NAME
+# Check if we're using Minikube or Kind
+if command -v minikube &> /dev/null && minikube status &> /dev/null; then
+    echo "🔧 Detected Minikube - Loading images..."
+    minikube image load edi-api:latest
+    minikube image load edi-worker:latest
+elif command -v kind &> /dev/null && kind get clusters 2>/dev/null | grep -q .; then
+    echo "🔧 Detected Kind - Loading images..."
+    CLUSTER_NAME=$(kind get clusters | head -n 1)
+    kind load docker-image edi-api:latest --name "$CLUSTER_NAME"
+    kind load docker-image edi-worker:latest --name "$CLUSTER_NAME"
 else
-    echo "Using Docker Desktop Kubernetes - images already available"
+    echo "ℹ️  Using local Kubernetes (Docker Desktop or similar)"
 fi
 
-echo ""
-echo "Step 3: Creating namespace and resources..."
-kubectl apply -f k8s/00-namespace.yaml
-kubectl apply -f k8s/01-configmap.yaml
-kubectl apply -f k8s/02-pvc.yaml
+# Apply Kubernetes manifests
+echo "📝 Applying Kubernetes manifests..."
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/storage.yaml
+kubectl apply -f k8s/mongodb.yaml
+kubectl apply -f k8s/redis.yaml
+
+# Wait for databases to be ready
+echo "⏳ Waiting for databases to be ready..."
+kubectl wait --for=condition=available --timeout=120s deployment/mongodb -n edi
+kubectl wait --for=condition=available --timeout=120s deployment/redis -n edi
+
+# Deploy applications
+echo "🚀 Deploying API and Worker..."
+kubectl apply -f k8s/api.yaml
+kubectl apply -f k8s/worker.yaml
+
+# Wait for applications to be ready
+echo "⏳ Waiting for applications to be ready..."
+kubectl wait --for=condition=available --timeout=120s deployment/edi-api -n edi
+kubectl wait --for=condition=available --timeout=120s deployment/edi-worker -n edi
 
 echo ""
-echo "Step 4: Deploying MongoDB and Redis..."
-kubectl apply -f k8s/03-mongodb.yaml
-kubectl apply -f k8s/04-redis.yaml
-
-echo "Waiting for MongoDB to be ready..."
-kubectl wait --for=condition=ready pod -l app=mongodb -n edi-processing --timeout=120s
-
-echo "Waiting for Redis to be ready..."
-kubectl wait --for=condition=ready pod -l app=redis -n edi-processing --timeout=120s
-
+echo "✅ Deployment complete!"
 echo ""
-echo "Step 5: Deploying API and Worker services..."
-kubectl apply -f k8s/05-api.yaml
-kubectl apply -f k8s/06-worker.yaml
-
-echo "Waiting for API to be ready..."
-kubectl wait --for=condition=ready pod -l app=edi-api -n edi-processing --timeout=120s
-
-echo "Waiting for Worker to be ready..."
-kubectl wait --for=condition=ready pod -l app=edi-worker -n edi-processing --timeout=120s
-
+echo "📊 Current status:"
+kubectl get pods -n edi
 echo ""
-echo "Step 6: Deploying Prometheus..."
-kubectl apply -f k8s/07-prometheus.yaml
-
+echo "🔗 To access the API:"
+echo "   kubectl port-forward -n edi svc/edi-api 8080:8080"
 echo ""
-echo "========================================="
-echo "Deployment Complete!"
-echo "========================================="
+echo "   Then visit: http://localhost:8080/health"
 echo ""
-echo "To access the services, run:"
-echo ""
-echo "  API Server:    kubectl port-forward -n edi-processing svc/edi-api 8080:8080"
-echo "  Worker Metrics: kubectl port-forward -n edi-processing svc/edi-worker 9091:9091"
-echo "  Prometheus:    kubectl port-forward -n edi-processing svc/prometheus 9090:9090"
-echo ""
-echo "Check status with:"
-echo "  kubectl get pods -n edi-processing"
-echo "  kubectl get svc -n edi-processing"
+echo "📝 View logs:"
+echo "   kubectl logs -n edi -l app=edi-api -f"
+echo "   kubectl logs -n edi -l app=edi-worker -f"
 echo ""

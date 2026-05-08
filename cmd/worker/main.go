@@ -3,167 +3,97 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sarabjeet/golang-backend-task/internal/config"
-	"github.com/sarabjeet/golang-backend-task/internal/logger"
-	"github.com/sarabjeet/golang-backend-task/internal/metrics"
 	"github.com/sarabjeet/golang-backend-task/internal/queue"
 	"github.com/sarabjeet/golang-backend-task/internal/storage"
 	"github.com/sarabjeet/golang-backend-task/internal/worker"
-	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	log := logger.New()
-	log.Info("Starting EDI Worker Service")
-
-	metrics.Init()
-	log.Info("Metrics initialized")
+	log.Println("Starting EDI Worker Service")
 
 	cfg := config.Load()
-	log.WithFields(logrus.Fields{
-		"mongodb_uri":     cfg.MongoDB.URI,
-		"redis_host":      cfg.Redis.Host,
-		"redis_port":      cfg.Redis.Port,
-		"max_retries":     cfg.Worker.MaxRetries,
-		"poll_interval":   cfg.Worker.PollInterval,
-		"initial_backoff": cfg.Worker.InitialBackoff,
-	}).Info("Configuration loaded")
+	log.Printf("Configuration loaded - MongoDB: %s, Redis: %s:%s\n",
+		cfg.MongoDB.URI, cfg.Redis.Host, cfg.Redis.Port)
 
+	// Initialize storage
 	store, err := storage.New(cfg)
 	if err != nil {
-		log.WithError(err).Fatal("Failed to initialize storage")
+		log.Fatalf("Failed to initialize storage: %v", err)
 	}
-	log.Info("Storage initialized successfully")
-
-	q, err := queue.New(cfg)
-	if err != nil {
-		log.WithError(err).Fatal("Failed to initialize queue")
-	}
-	log.Info("Queue initialized successfully")
-
-	processor := worker.NewProcessor(store, log, cfg.Worker.MaxRetries)
-
-	go func() {
-		metricsPort := os.Getenv("METRICS_PORT")
-		if metricsPort == "" {
-			metricsPort = "9091"
-		}
-		http.Handle("/metrics", promhttp.Handler())
-		log.WithField("port", metricsPort).Info("Starting metrics server")
-		if err := http.ListenAndServe(":"+metricsPort, nil); err != nil {
-			log.WithError(err).Error("Failed to start metrics server")
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := store.Close(ctx); err != nil {
+			log.Printf("Error closing storage: %v", err)
 		}
 	}()
 
+	// Initialize queue
+	q, err := queue.New(cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize queue: %v", err)
+	}
+	defer func() {
+		if err := q.Close(); err != nil {
+			log.Printf("Error closing queue: %v", err)
+		}
+	}()
+
+	// Initialize processor
+	processor := worker.NewProcessor(store, cfg.Worker.MaxRetries)
+
+	// Start metrics endpoint
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		log.Println("Metrics server started on :9091")
+		if err := http.ListenAndServe(":9091", nil); err != nil {
+			log.Printf("Metrics server error: %v", err)
+		}
+	}()
+
+	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	var wg sync.WaitGroup
+	// Start worker loop
+	go workerLoop(ctx, q, processor, cfg)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		workerLoop(ctx, log, q, processor, cfg, &wg)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		monitorQueueSize(ctx, log, q)
-	}()
-
-	sig := <-sigChan
-	log.WithField("signal", sig.String()).Info("Shutdown signal received")
-
+	// Wait for shutdown signal
+	<-sigChan
+	log.Println("Shutdown signal received, stopping worker...")
 	cancel()
 
-	shutdownComplete := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(shutdownComplete)
-	}()
-
-	shutdownTimeout := time.Duration(cfg.Worker.ShutdownTimeout) * time.Second
-	select {
-	case <-shutdownComplete:
-		log.Info("All jobs completed successfully")
-	case <-time.After(shutdownTimeout):
-		log.Warn("Shutdown timeout reached, forcing exit")
-	}
-
-	if err := q.Close(); err != nil {
-		log.WithError(err).Error("Error closing queue connection")
-	}
-
-	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer closeCancel()
-	if err := store.Close(closeCtx); err != nil {
-		log.WithError(err).Error("Error closing storage connection")
-	}
-
-	log.Info("Worker service shutdown complete")
+	// Give some time for graceful shutdown
+	time.Sleep(5 * time.Second)
+	log.Println("Worker service stopped")
 }
 
-func monitorQueueSize(ctx context.Context, log *logger.Logger, q *queue.Queue) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			size, err := q.Size(ctx)
-			if err != nil {
-				log.WithError(err).Error("Failed to get queue size")
-				continue
-			}
-			metrics.SetRedisQueueSize(float64(size))
-		}
-	}
-}
-
-func workerLoop(ctx context.Context, log *logger.Logger, q *queue.Queue, processor *worker.Processor, cfg *config.Config, wg *sync.WaitGroup) {
-	log.Info("Worker loop started")
+func workerLoop(ctx context.Context, q *queue.Queue, processor *worker.Processor, cfg *config.Config) {
+	log.Println("Worker loop started")
 	pollInterval := time.Duration(cfg.Worker.PollInterval) * time.Second
 
-	retryJobs := make(map[string]time.Time)
-	var retryMutex sync.Mutex
-
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info("Worker loop stopping")
+			log.Println("Worker loop stopped")
 			return
 		default:
-			retryMutex.Lock()
-			for jobID, retryTime := range retryJobs {
-				if time.Now().After(retryTime) {
-					delete(retryJobs, jobID)
-
-					wg.Add(1)
-					go func(jID string) {
-						defer wg.Done()
-						processJobWithLogging(ctx, log, processor, jID, "")
-					}(jobID)
-				}
-			}
-			retryMutex.Unlock()
-
+			// Dequeue job
 			jobData, err := q.Dequeue(ctx)
 			if err != nil {
-				log.WithError(err).Error("Failed to dequeue job")
+				log.Printf("Error dequeuing job: %v", err)
 				time.Sleep(pollInterval)
 				continue
 			}
@@ -173,117 +103,28 @@ func workerLoop(ctx context.Context, log *logger.Logger, q *queue.Queue, process
 				continue
 			}
 
+			// Parse job message
 			var jobMsg queue.JobMessage
-			if err := json.Unmarshal([]byte(jobData), &jobMsg); err == nil && jobMsg.JobID != "" {
-				log.WithField("job_id", jobMsg.JobID).Info("Job message dequeued from queue")
-
-				job, err := processor.GetJob(ctx, jobMsg.JobID)
-				if err != nil {
-					log.WithFields(logrus.Fields{
-						"job_id": jobMsg.JobID,
-						"error":  err.Error(),
-					}).Error("Failed to get job for backoff calculation")
-					wg.Add(1)
-					go func(msg queue.JobMessage) {
-						defer wg.Done()
-						processJobWithLogging(ctx, log, processor, msg.JobID, msg.FileContent)
-					}(jobMsg)
-					continue
-				}
-
-				if job.RetryCount > 0 {
-					backoff := processor.CalculateBackoff(job.RetryCount-1, cfg.Worker.InitialBackoff)
-					retryTime := time.Now().Add(backoff)
-
-					log.WithFields(logrus.Fields{
-						"job_id":      jobMsg.JobID,
-						"retry_count": job.RetryCount,
-						"backoff":     backoff.String(),
-						"retry_at":    retryTime.Format(time.RFC3339),
-					}).Info("Scheduling job for retry with backoff")
-
-					retryMutex.Lock()
-					retryJobs[jobMsg.JobID] = retryTime
-					retryMutex.Unlock()
-					continue
-				}
-
-				wg.Add(1)
-				go func(msg queue.JobMessage) {
-					defer wg.Done()
-					processJobWithLogging(ctx, log, processor, msg.JobID, msg.FileContent)
-				}(jobMsg)
+			if err := json.Unmarshal([]byte(jobData), &jobMsg); err != nil {
+				// Fallback to legacy format (just job ID)
+				processJob(ctx, processor, jobData, "")
 			} else {
-				log.WithField("job_id", jobData).Info("Job ID dequeued from queue (legacy format)")
-
-				job, err := processor.GetJob(ctx, jobData)
-				if err != nil {
-					log.WithFields(logrus.Fields{
-						"job_id": jobData,
-						"error":  err.Error(),
-					}).Error("Failed to get job for backoff calculation")
-					wg.Add(1)
-					go func(jID string) {
-						defer wg.Done()
-						processJobWithLogging(ctx, log, processor, jID, "")
-					}(jobData)
-					continue
-				}
-
-				if job.RetryCount > 0 {
-					backoff := processor.CalculateBackoff(job.RetryCount-1, cfg.Worker.InitialBackoff)
-					retryTime := time.Now().Add(backoff)
-
-					log.WithFields(logrus.Fields{
-						"job_id":      jobData,
-						"retry_count": job.RetryCount,
-						"backoff":     backoff.String(),
-						"retry_at":    retryTime.Format(time.RFC3339),
-					}).Info("Scheduling job for retry with backoff")
-
-					retryMutex.Lock()
-					retryJobs[jobData] = retryTime
-					retryMutex.Unlock()
-					continue
-				}
-
-				wg.Add(1)
-				go func(jID string) {
-					defer wg.Done()
-					processJobWithLogging(ctx, log, processor, jID, "")
-				}(jobData)
+				processJob(ctx, processor, jobMsg.JobID, jobMsg.FileContent)
 			}
 		}
 	}
 }
 
-func processJobWithLogging(ctx context.Context, log *logger.Logger, processor *worker.Processor, jobID string, fileContent string) {
+func processJob(ctx context.Context, processor *worker.Processor, jobID, fileContent string) {
 	startTime := time.Now()
-
-	log.WithField("job_id", jobID).Info("Processing job")
-
-	metrics.RecordJobProcessing()
-	metrics.IncrementActiveJobs()
-	defer metrics.DecrementActiveJobs()
+	log.Printf("Processing job: %s", jobID)
 
 	err := processor.ProcessJob(ctx, jobID, fileContent)
-
 	duration := time.Since(startTime)
 
-	metrics.RecordJobProcessingDuration(duration)
-
 	if err != nil {
-		log.WithFields(logrus.Fields{
-			"job_id":   jobID,
-			"duration": duration.String(),
-			"error":    err.Error(),
-		}).Error("Job processing failed")
-		metrics.RecordJobFailed()
+		log.Printf("Job %s failed after %v: %v", jobID, duration, err)
 	} else {
-		log.WithFields(logrus.Fields{
-			"job_id":   jobID,
-			"duration": duration.String(),
-		}).Info("Job processing completed")
-		metrics.RecordJobCompleted()
+		log.Printf("Job %s completed successfully in %v", jobID, duration)
 	}
 }

@@ -3,151 +3,92 @@ package worker
 import (
 	"context"
 	"fmt"
-	"time"
+	"log"
 
-	"github.com/sarabjeet/golang-backend-task/internal/logger"
 	"github.com/sarabjeet/golang-backend-task/internal/models"
 	"github.com/sarabjeet/golang-backend-task/internal/parser"
 	"github.com/sarabjeet/golang-backend-task/internal/storage"
-	"github.com/sirupsen/logrus"
 )
 
 type Processor struct {
 	storage    *storage.Storage
-	log        *logger.Logger
 	maxRetries int
 }
 
-func NewProcessor(storage *storage.Storage, log *logger.Logger, maxRetries int) *Processor {
+func NewProcessor(storage *storage.Storage, maxRetries int) *Processor {
 	return &Processor{
 		storage:    storage,
-		log:        log,
 		maxRetries: maxRetries,
 	}
 }
 
 func (p *Processor) ProcessJob(ctx context.Context, jobID string, fileContent string) error {
-	p.log.WithFields(logrus.Fields{
-		"job_id": jobID,
-	}).Info("Starting job processing")
-
+	// Get job from storage
 	job, err := p.storage.GetJob(ctx, jobID)
 	if err != nil {
-		p.log.WithFields(logrus.Fields{
-			"job_id": jobID,
-			"error":  err.Error(),
-		}).Error("Failed to get job from storage")
+		log.Printf("Failed to get job %s: %v", jobID, err)
 		return fmt.Errorf("failed to get job: %w", err)
 	}
 
+	// Check if job is in pending status
 	if job.Status != models.StatusPending {
-		p.log.WithFields(logrus.Fields{
-			"job_id": jobID,
-			"status": job.Status,
-		}).Warn("Job is not in pending status, skipping")
+		log.Printf("Job %s is not pending (status: %s), skipping", jobID, job.Status)
 		return nil
 	}
 
+	// Update status to processing
 	if err := p.storage.UpdateJobStatus(ctx, jobID, models.StatusProcessing); err != nil {
-		p.log.WithFields(logrus.Fields{
-			"job_id": jobID,
-			"error":  err.Error(),
-		}).Error("Failed to update job status to processing")
+		log.Printf("Failed to update job %s to processing: %v", jobID, err)
 		return fmt.Errorf("failed to update job status: %w", err)
 	}
 
-	p.log.WithFields(logrus.Fields{
-		"job_id": jobID,
-	}).Info("Job status updated to processing")
-
+	// Validate file content
 	if fileContent == "" {
-		p.log.WithFields(logrus.Fields{
-			"job_id": jobID,
-		}).Error("File content not provided")
-		if updateErr := p.storage.UpdateJobWithResult(ctx, jobID, models.StatusFailed, nil, "File content not available"); updateErr != nil {
-			p.log.WithFields(logrus.Fields{
-				"job_id": jobID,
-				"error":  updateErr.Error(),
-			}).Error("Failed to update job status to failed")
-			return fmt.Errorf("failed to update job status: %w", updateErr)
+		log.Printf("Job %s has no file content", jobID)
+		if err := p.storage.UpdateJobWithResult(ctx, jobID, models.StatusFailed, nil, "File content not available"); err != nil {
+			return fmt.Errorf("failed to update job status: %w", err)
 		}
 		return fmt.Errorf("file content not available")
 	}
 
+	// Parse EDI file
 	result, err := parser.ParseEDI(fileContent)
 	if err != nil {
-		p.log.WithFields(logrus.Fields{
-			"job_id": jobID,
-			"error":  err.Error(),
-		}).Error("Failed to parse EDI file")
+		log.Printf("Failed to parse EDI file for job %s: %v", jobID, err)
 
+		// Check if we should retry
 		if job.RetryCount < p.maxRetries {
-			p.log.WithFields(logrus.Fields{
-				"job_id":      jobID,
-				"retry_count": job.RetryCount + 1,
-				"max_retries": p.maxRetries,
-			}).Info("Marking job for retry")
+			log.Printf("Job %s will be retried (attempt %d/%d)", jobID, job.RetryCount+1, p.maxRetries)
 
-			if updateErr := p.storage.UpdateJobStatus(ctx, jobID, models.StatusPending); updateErr != nil {
-				p.log.WithFields(logrus.Fields{
-					"job_id": jobID,
-					"error":  updateErr.Error(),
-				}).Error("Failed to update job status for retry")
+			// Mark job as pending for retry
+			if err := p.storage.UpdateJobStatus(ctx, jobID, models.StatusPending); err != nil {
+				log.Printf("Failed to update job status for retry: %v", err)
 			}
 
-			if incrErr := p.storage.IncrementRetryCount(ctx, jobID); incrErr != nil {
-				p.log.WithFields(logrus.Fields{
-					"job_id": jobID,
-					"error":  incrErr.Error(),
-				}).Error("Failed to increment retry count")
+			// Increment retry count
+			if err := p.storage.IncrementRetryCount(ctx, jobID); err != nil {
+				log.Printf("Failed to increment retry count: %v", err)
 			}
 
 			return fmt.Errorf("parsing failed, job marked for retry: %w", err)
 		}
 
-		p.log.WithFields(logrus.Fields{
-			"job_id":      jobID,
-			"retry_count": job.RetryCount,
-			"max_retries": p.maxRetries,
-		}).Error("Max retries exceeded, marking job as failed")
-
-		if updateErr := p.storage.UpdateJobWithResult(ctx, jobID, models.StatusFailed, nil, err.Error()); updateErr != nil {
-			p.log.WithFields(logrus.Fields{
-				"job_id": jobID,
-				"error":  updateErr.Error(),
-			}).Error("Failed to update job status to failed")
-			return fmt.Errorf("failed to update job status: %w", updateErr)
+		// Max retries exceeded, mark as failed
+		log.Printf("Job %s failed after %d attempts", jobID, p.maxRetries)
+		if err := p.storage.UpdateJobWithResult(ctx, jobID, models.StatusFailed, nil, err.Error()); err != nil {
+			return fmt.Errorf("failed to update job status: %w", err)
 		}
-
 		return fmt.Errorf("parsing failed after max retries: %w", err)
 	}
 
-	p.log.WithFields(logrus.Fields{
-		"job_id":       jobID,
-		"total_claims": result.Summary.TotalClaims,
-		"total_amount": result.Summary.TotalAmount,
-	}).Info("Successfully parsed EDI file")
+	// Save result and mark as completed
+	log.Printf("Job %s parsed successfully: %d claims, total amount: %.2f",
+		jobID, result.Summary.TotalClaims, result.Summary.TotalAmount)
 
 	if err := p.storage.UpdateJobWithResult(ctx, jobID, models.StatusCompleted, result, ""); err != nil {
-		p.log.WithFields(logrus.Fields{
-			"job_id": jobID,
-			"error":  err.Error(),
-		}).Error("Failed to update job with result")
+		log.Printf("Failed to save result for job %s: %v", jobID, err)
 		return fmt.Errorf("failed to update job with result: %w", err)
 	}
 
-	p.log.WithFields(logrus.Fields{
-		"job_id": jobID,
-	}).Info("Job completed successfully")
-
 	return nil
-}
-
-func (p *Processor) GetJob(ctx context.Context, jobID string) (*models.Job, error) {
-	return p.storage.GetJob(ctx, jobID)
-}
-
-func (p *Processor) CalculateBackoff(retryCount int, initialBackoff int) time.Duration {
-	backoffSeconds := (1 << uint(retryCount)) * initialBackoff
-	return time.Duration(backoffSeconds) * time.Second
 }

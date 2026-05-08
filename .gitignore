@@ -1,9 +1,18 @@
-# Binaries
-bin/
+# Binaries and executables
 *.exe
+*.exe~
 *.dll
 *.so
 *.dylib
+*.test
+*.out
+api
+edi-api
+edi-worker
+worker
+
+# Go workspace file
+go.work
 
 # Test binary, built with `go test -c`
 *.test
@@ -11,31 +20,33 @@ bin/
 # Output of the go coverage tool
 *.out
 coverage.html
+coverage.out
 
-# Go workspace file
-go.work
+# Dependency directories
+vendor/
 
-# Environment files
-.env
-.env.local
+# Go build cache
+.cache/
 
 # IDE specific files
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
 .DS_Store
 
-# Temporary files
-tmp/
-temp/
-*.tmp
+# Environment variables
+.env
+.env.local
 
 # Logs
 *.log
-logs/
 
-# Build artifacts
-dist/
-build/
+# Database files
+*.db
+*.sqlite
+
+# Temporary files
+tmp/
+temp/

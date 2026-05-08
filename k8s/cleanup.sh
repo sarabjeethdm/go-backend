@@ -1,14 +1,20 @@
 #!/bin/bash
 
-echo "Cleaning up EDI Processing System from Kubernetes..."
+set -e
 
-kubectl delete -f k8s/07-prometheus.yaml --ignore-not-found=true
-kubectl delete -f k8s/06-worker.yaml --ignore-not-found=true
-kubectl delete -f k8s/05-api.yaml --ignore-not-found=true
-kubectl delete -f k8s/04-redis.yaml --ignore-not-found=true
-kubectl delete -f k8s/03-mongodb.yaml --ignore-not-found=true
-kubectl delete -f k8s/02-pvc.yaml --ignore-not-found=true
-kubectl delete -f k8s/01-configmap.yaml --ignore-not-found=true
-kubectl delete -f k8s/00-namespace.yaml --ignore-not-found=true
+echo "🧹 Cleaning up EDI Processing System from Kubernetes..."
 
-echo "Cleanup complete!"
+# Delete all resources
+kubectl delete -f k8s/worker.yaml --ignore-not-found=true
+kubectl delete -f k8s/api.yaml --ignore-not-found=true
+kubectl delete -f k8s/redis.yaml --ignore-not-found=true
+kubectl delete -f k8s/mongodb.yaml --ignore-not-found=true
+kubectl delete -f k8s/storage.yaml --ignore-not-found=true
+kubectl delete -f k8s/configmap.yaml --ignore-not-found=true
+
+# Delete namespace (this will delete everything inside it)
+kubectl delete namespace edi --ignore-not-found=true
+
+echo ""
+echo "✅ Cleanup complete!"
+echo ""

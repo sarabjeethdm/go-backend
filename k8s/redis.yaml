@@ -1,8 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: edi-redis
-  namespace: edi-processing
+  name: redis
+  namespace: edi
 spec:
   replicas: 1
   selector:
@@ -22,22 +22,6 @@ spec:
         volumeMounts:
         - name: redis-storage
           mountPath: /data
-        livenessProbe:
-          exec:
-            command:
-            - redis-cli
-            - ping
-          initialDelaySeconds: 15
-          periodSeconds: 10
-          timeoutSeconds: 5
-        readinessProbe:
-          exec:
-            command:
-            - redis-cli
-            - ping
-          initialDelaySeconds: 5
-          periodSeconds: 5
-          timeoutSeconds: 3
         resources:
           requests:
             memory: "128Mi"
@@ -53,8 +37,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: edi-redis
-  namespace: edi-processing
+  name: redis
+  namespace: edi
 spec:
   selector:
     app: redis

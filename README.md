@@ -1,42 +1,55 @@
-# EDI Processing Backend System
+# EDI Processing System
 
-A production-ready Go-based backend system for processing EDI (Electronic Data Interchange) files asynchronously. The system consists of an API service and worker service, using MongoDB for persistence and Redis for job queuing, with automatic retry logic and exponential backoff.
+A backend system built with Go for processing EDI (Electronic Data Interchange) files asynchronously. The system uses MongoDB for data storage, Redis for job queuing, and provides a REST API for file uploads and status tracking.
 
 ## Features
 
-### Core Features
-- **REST API**: Upload EDI files and retrieve processing results
-- **Asynchronous Processing**: Background job processing via Redis queue
-- **Automatic Retries**: Failed jobs retry up to 3 times with exponential backoff (2s, 4s, 8s)
-- **MongoDB Storage**: Persistent storage for jobs and results
-- **Docker Compose**: Full stack deployment with a single command
-- **Health Checks**: API health endpoint for monitoring
-- **Structured Logging**: JSON-formatted logs throughout
-- **Graceful Shutdown**: Clean shutdown for both API and worker services
-- **Environment Config**: Configurable via environment variables
+- **REST API** for uploading EDI files and checking processing status
+- **Asynchronous Processing** using Redis queue
+- **Automatic Retries** for failed jobs (up to 3 attempts)
+- **MongoDB Storage** for persistence
+- **Docker Compose** for easy local deployment
+- **Kubernetes** manifests for production-like deployment
+- **Prometheus Metrics** endpoint for monitoring
+- **Graceful Shutdown** handling
 
-### Bonus Features
-- **Comprehensive Tests**: 28+ unit and integration tests
-- **Prometheus Metrics**: 9 metrics with 15 alert rules
-- **Swagger Documentation**: Complete OpenAPI specification
-- **Job Failure Handling**: Detailed error tracking and reporting
+## Deployment Options
+
+Choose the deployment method that fits your needs:
+
+| Method | Best For | Complexity | Commands |
+|--------|----------|------------|----------|
+| **Docker Compose** | Local development, quick testing | Low | `docker-compose up -d` |
+| **Kubernetes** | Learning K8s, production-like setup | Medium | `./k8s/deploy.sh` |
+| **Local** | Development, debugging | Low | `make run && make run-worker` |
+
+## Tech Stack
+
+- **Language**: Go 1.22
+- **API Framework**: Gin
+- **Database**: MongoDB 7.0
+- **Queue**: Redis 7.2
+- **Containerization**: Docker & Docker Compose
 
 ## Architecture
 
 ```
-┌──────────────┐       ┌──────────────┐       ┌──────────────┐
-│              │       │              │       │              │
-│   API/Web    │──────▶│    Redis     │──────▶│    Worker    │
-│   Service    │ Push  │    Queue     │ Poll  │   Service    │
-│              │       │              │       │              │
-└──────────────┘       └──────────────┘       └──────┬───────┘
-                                                      │
-                                                      │ Update
-                                                      ▼
-                                              ┌──────────────┐
-                                              │   MongoDB    │
-                                              │   (Jobs)     │
-                                              └──────────────┘
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│   Client    │─────>│  API Server │─────>│    Redis    │
+│             │      │  (Port 8080)│      │   Queue     │
+└─────────────┘      └─────────────┘      └──────┬──────┘
+                                                  │
+                                                  v
+                                          ┌─────────────┐
+                                          │   Worker    │
+                                          │  (Port 9091)│
+                                          └──────┬──────┘
+                                                  │
+                                                  v
+                                          ┌─────────────┐
+                                          │  MongoDB    │
+                                          │             │
+                                          └─────────────┘
 ```
 
 ## Project Structure
@@ -44,100 +57,96 @@ A production-ready Go-based backend system for processing EDI (Electronic Data I
 ```
 golang-backend-task/
 ├── cmd/
-│   └── worker/
-│       └── main.go                 # Worker service entry point
+│   ├── api/          # API server entry point
+│   └── worker/       # Worker service entry point
 ├── internal/
-│   ├── config/
-│   │   └── config.go               # Configuration management
-│   ├── logger/
-│   │   └── logger.go               # Structured logging
-│   ├── models/
-│   │   └── models.go               # Data models (Job, Claim, Result)
-│   ├── storage/
-│   │   └── storage.go              # MongoDB operations
-│   ├── queue/
-│   │   └── queue.go                # Redis queue operations
-│   ├── parser/
-│   │   └── edi_parser.go           # EDI file parser
-│   └── worker/
-│       └── processor.go            # Job processing logic
-├── go.mod                          # Go dependencies
-├── go.sum                          # Dependency checksums
-├── .env.example                    # Example environment variables
-├── Makefile                        # Build and run commands
-└── README.md                       # This file
+│   ├── api/          # HTTP handlers and routes
+│   ├── config/       # Configuration management
+│   ├── logger/       # Logging utilities
+│   ├── metrics/      # Prometheus metrics
+│   ├── models/       # Data models
+│   ├── parser/       # EDI file parser
+│   ├── queue/        # Redis queue operations
+│   ├── storage/      # MongoDB operations
+│   └── worker/       # Job processor
+├── Dockerfile        # API server Docker image
+├── Dockerfile.worker # Worker Docker image
+├── docker-compose.yml
+├── Makefile
+└── README.md
 ```
 
-## Prerequisites
+## Quick Start
 
-- Go 1.21 or higher
-- MongoDB 4.4 or higher
-- Redis 6.0 or higher
+### Prerequisites
 
-## Deployment Options
+- **For Docker Compose**: Docker and Docker Compose
+- **For Kubernetes**: kubectl, Minikube/Kind/Docker Desktop, Docker
+- **For local development**: Go 1.22+, MongoDB 7.0+, Redis 7.2+
 
-The system can be deployed using either Docker Compose or Kubernetes.
-
-### Docker Compose (Local Development)
-
-For local development and testing:
-
-```bash
-# Start all services
-docker-compose up -d
-
-# Check status
-docker-compose ps
-
-# View logs
-docker-compose logs -f
-
-# Stop all services
-docker-compose down
-```
-
-**Services included:**
-- API Server (port 8080)
-- Worker Service (port 9091 - metrics)
-- MongoDB (port 27017)
-- Redis (port 6379)
-- Prometheus (port 9090)
-
-See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
-
-### Kubernetes (Production-Ready)
-
-For production deployment on Kubernetes (Minikube, Kind, or Docker Desktop):
-
-```bash
-# Quick deployment
-./k8s/deploy.sh
-
-# Access API via port-forward
-kubectl port-forward -n edi-processing svc/edi-api 8080:8080
-
-# Check status
-kubectl get pods -n edi-processing
-
-# Cleanup
-./k8s/cleanup.sh
-```
-
-**Features:**
-- 2 replicas each for API and Worker (high availability)
-- Persistent storage for MongoDB, Redis, and Prometheus
-- Health checks and readiness probes
-- Resource limits and requests
-- ConfigMap for centralized configuration
-- Horizontal scaling support
-
-See [k8s/README.md](k8s/README.md) for complete Kubernetes documentation.
-
-## Installation
+### Option 1: Docker Compose (Easiest)
 
 1. Clone the repository:
 ```bash
-cd /Users/sarabjeet.9353gmail.com/Documents/DEV/golang-backend-task
+git clone <repository-url>
+cd golang-backend-task
+```
+
+2. Start all services:
+```bash
+docker-compose up -d
+```
+
+3. Check that services are running:
+```bash
+docker-compose ps
+```
+
+You should see:
+- `edi-api` on port 8080
+- `edi-worker` on port 9091
+- `edi-mongodb` on port 27017
+- `edi-redis` on port 6379
+
+4. Test the API:
+```bash
+curl http://localhost:8080/health
+```
+
+### Option 2: Kubernetes (Production-like)
+
+1. Deploy to Kubernetes:
+```bash
+./k8s/deploy.sh
+```
+
+2. Access the API:
+```bash
+# Port-forward to access locally
+kubectl port-forward -n edi svc/edi-api 8080:8080
+
+# Test it
+curl http://localhost:8080/health
+```
+
+3. View logs:
+```bash
+kubectl logs -n edi -l app=edi-api -f
+```
+
+4. Cleanup when done:
+```bash
+./k8s/cleanup.sh
+```
+
+See [k8s/README.md](k8s/README.md) for detailed Kubernetes documentation.
+
+### Option 3: Local Development
+
+1. Start MongoDB and Redis:
+```bash
+docker run -d -p 27017:27017 --name mongodb mongo:7.0
+docker run -d -p 6379:6379 --name redis redis:7.2-alpine
 ```
 
 2. Install dependencies:
@@ -145,297 +154,42 @@ cd /Users/sarabjeet.9353gmail.com/Documents/DEV/golang-backend-task
 go mod download
 ```
 
-3. Copy the example environment file:
+3. Run the API server:
 ```bash
-cp .env.example .env
+make run
+# or
+go run cmd/api/main.go
 ```
 
-4. Update the `.env` file with your configuration.
-
-## Configuration
-
-Configuration is loaded from environment variables. All settings have sensible defaults.
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017` |
-| `MONGODB_DATABASE` | MongoDB database name | `edi_processor` |
-| `REDIS_HOST` | Redis host | `localhost` |
-| `REDIS_PORT` | Redis port | `6379` |
-| `REDIS_PASSWORD` | Redis password | `` |
-| `REDIS_DB` | Redis database number | `0` |
-| `WORKER_MAX_RETRIES` | Maximum retry attempts | `3` |
-| `WORKER_POLL_INTERVAL` | Queue poll interval (seconds) | `1` |
-| `WORKER_INITIAL_BACKOFF` | Initial backoff for retries (seconds) | `2` |
-| `WORKER_SHUTDOWN_TIMEOUT` | Graceful shutdown timeout (seconds) | `30` |
-| `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` |
-
-## Running the Worker
-
-### Using Make
-
+4. In another terminal, run the worker:
 ```bash
-# Build the worker
-make build-worker
-
-# Run the worker
 make run-worker
-
-# Run with custom environment
-MONGODB_URI=mongodb://custom:27017 make run-worker
-```
-
-### Using Go directly
-
-```bash
-# Run directly
+# or
 go run cmd/worker/main.go
-
-# Build and run
-go build -o bin/worker cmd/worker/main.go
-./bin/worker
 ```
 
-### Using Docker (optional)
+## API Endpoints
 
-```dockerfile
-FROM golang:1.21-alpine AS builder
-WORKDIR /app
-COPY . .
-RUN go mod download
-RUN go build -o worker cmd/worker/main.go
-
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /root/
-COPY --from=builder /app/worker .
-CMD ["./worker"]
+### Health Check
+```bash
+GET /health
 ```
-
-## EDI File Format
-
-The worker expects EDI files in the following format:
-
-```
-CLAIM*CLM001*MEM123*2500
-CLAIM*CLM002*MEM456*3000
-CLAIM*CLM003*MEM789*1500
-```
-
-**Format**: `CLAIM*claim_id*member_id*amount`
-
-- **CLAIM**: Record type (must be "CLAIM")
-- **claim_id**: Unique claim identifier
-- **member_id**: Member identifier
-- **amount**: Claim amount (numeric, non-negative)
-
-## Job Processing Flow
-
-1. **Dequeue**: Worker polls Redis queue for job IDs
-2. **Fetch**: Retrieves job details from MongoDB
-3. **Validate**: Checks job status (must be "pending")
-4. **Update**: Sets status to "processing"
-5. **Parse**: Parses EDI file content
-6. **Store**: Saves parsed result to MongoDB
-7. **Complete**: Updates status to "completed" or "failed"
-
-### Retry Logic
-
-- Failed jobs are automatically retried up to 3 times
-- Exponential backoff between retries:
-  - Retry 1: 2 seconds
-  - Retry 2: 4 seconds
-  - Retry 3: 8 seconds
-- After max retries, job is marked as "failed"
-
-## Monitoring
-
-The worker outputs structured JSON logs that can be ingested by log aggregation systems.
-
-### Log Fields
-
-- `timestamp`: ISO 8601 timestamp
-- `level`: Log level (info, warn, error)
-- `message`: Log message
-- `job_id`: Job identifier (when applicable)
-- `duration`: Processing duration (when applicable)
-- `error`: Error message (when applicable)
-
-### Example Log Output
-
+Response:
 ```json
 {
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "level": "info",
-  "message": "Job completed successfully",
-  "job_id": "65a5b1234567890abcdef123",
-  "duration": "250ms",
-  "total_claims": 3,
-  "total_amount": 7000
+  "status": "healthy"
 }
 ```
 
-## Graceful Shutdown
-
-The worker handles shutdown signals gracefully:
-
-1. Receives SIGTERM or SIGINT signal
-2. Stops accepting new jobs from queue
-3. Waits for active jobs to complete
-4. Enforces shutdown timeout (default 30s)
-5. Closes database and queue connections
-6. Exits cleanly
-
-## Testing
-
-The project includes comprehensive unit tests, integration tests, and test fixtures for both the API and worker components.
-
-### Running Tests
-
+### Upload EDI File
 ```bash
-# Run all tests
-make test
+POST /jobs
+Content-Type: multipart/form-data
 
-# Run only unit tests (no external dependencies required)
-make test-unit
-
-# Run integration tests (requires running services)
-make test-integration
-
-# Run tests with coverage report
-make test-coverage
-# Opens coverage.html in your browser
-
-# Run tests with verbose output
-make test-verbose
-```
-
-### Test Structure
-
-```
-golang-backend-task/
-├── internal/
-│   ├── api/
-│   │   └── handlers_test.go        # API handler unit tests
-│   └── worker/
-│       └── processor_test.go       # Worker processor unit tests  
-└── tests/
-    ├── integration_test.go         # End-to-end integration tests
-    └── fixtures/
-        ├── valid.edi               # Valid EDI test file
-        └── invalid.edi             # Invalid EDI test file
-```
-
-### Test Coverage
-
-- **API Handler Tests** (`internal/api/handlers_test.go`):
-  - Health check endpoint
-  - Job creation with file upload
-  - Job status retrieval
-  - Result retrieval
-  - Error handling (invalid inputs, database errors, queue errors)
-  - Edge cases (empty files, large files, invalid job IDs)
-
-- **Worker Processor Tests** (`internal/worker/processor_test.go`):
-  - Successful job processing
-  - Parse failure handling
-  - Retry logic with exponential backoff
-  - Max retries exceeded
-  - Job state validation
-  - Storage error handling
-
-- **Integration Tests** (`tests/integration_test.go`):
-  - End-to-end job processing workflow
-  - Invalid EDI file handling
-  - Concurrent job submissions
-  - Job not found scenarios
-
-### Running Integration Tests
-
-Integration tests require the API server, MongoDB, and Redis to be running:
-
-```bash
-# Terminal 1: Start MongoDB and Redis
-make dev-services
-
-# Terminal 2: Start API server
-make run
-
-# Terminal 3: Run integration tests
-make test-integration
-```
-
-Integration tests automatically skip if services are not available.
-
-### Test Fixtures
-
-- **valid.edi**: Sample valid EDI file with 5 claims (13,000 total amount)
-- **invalid.edi**: Sample invalid EDI file for error handling tests
-
-## API Documentation
-
-The EDI Processing API is fully documented using OpenAPI 3.0 (Swagger) specification.
-
-### Interactive Swagger UI
-
-Once the API server is running, access the interactive Swagger UI documentation:
-
-```
-http://localhost:8080/swagger/index.html
-```
-
-The Swagger UI provides:
-- Interactive API exploration
-- Request/response examples
-- "Try it out" functionality
-- Complete schema definitions
-
-### OpenAPI Specification
-
-The static OpenAPI spec is available at:
-- **File**: `docs/swagger.yaml`
-- **Format**: OpenAPI 3.0 YAML
-
-You can import this file into tools like:
-- [Swagger Editor](https://editor.swagger.io/)
-- [Postman](https://www.postman.com/)
-- [Insomnia](https://insomnia.rest/)
-
-### Generating Swagger Docs
-
-To regenerate Swagger documentation from code annotations:
-
-```bash
-# Install swag CLI tool (one-time setup)
-go install github.com/swaggo/swag/cmd/swag@latest
-export PATH=$PATH:$(go env GOPATH)/bin
-
-# Generate/update Swagger docs
-make swagger
-```
-
-**Note**: The project includes a manually crafted `swagger.yaml` that works without the swag tool.
-
-### API Endpoints Summary
-
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| `GET` | `/health` | Health check endpoint | No |
-| `POST` | `/jobs` | Upload EDI file for processing | No |
-| `GET` | `/jobs/:job_id` | Get job status by ID | No |
-| `GET` | `/jobs/:job_id/result` | Get processing result | No |
-
-### Example API Usage
-
-#### 1. Upload EDI File
-
-```bash
+# Example
 curl -X POST http://localhost:8080/jobs \
   -F "file=@sample.edi"
 ```
-
 Response:
 ```json
 {
@@ -444,12 +198,13 @@ Response:
 }
 ```
 
-#### 2. Check Job Status
-
+### Get Job Status
 ```bash
+GET /jobs/:job_id
+
+# Example
 curl http://localhost:8080/jobs/65a5b1234567890abcdef123
 ```
-
 Response:
 ```json
 {
@@ -461,12 +216,15 @@ Response:
 }
 ```
 
-#### 3. Get Result
+Status values: `pending`, `processing`, `completed`, `failed`
 
+### Get Processing Result
 ```bash
+GET /jobs/:job_id/result
+
+# Example
 curl http://localhost:8080/jobs/65a5b1234567890abcdef123/result
 ```
-
 Response:
 ```json
 {
@@ -476,58 +234,148 @@ Response:
       "claim_id": "CLM001",
       "member_id": "MEM123",
       "amount": 2500
+    },
+    {
+      "claim_id": "CLM002",
+      "member_id": "MEM456",
+      "amount": 3000
     }
   ],
   "summary": {
-    "total_claims": 3,
-    "total_amount": 7000
+    "total_claims": 2,
+    "total_amount": 5500
   }
 }
 ```
 
-For complete request/response schemas, error codes, and examples, see the Swagger documentation.
+## EDI File Format
+
+The system expects EDI files with the following format:
+
+```
+CLAIM*CLM001*MEM123*2500
+CLAIM*CLM002*MEM456*3000
+CLAIM*CLM003*MEM789*1500
+```
+
+Each line represents a claim with pipe-separated values:
+- `CLAIM`: Record type (must be "CLAIM")
+- `claim_id`: Unique claim identifier
+- `member_id`: Member identifier  
+- `amount`: Claim amount (numeric)
+
+## Configuration
+
+Configuration is managed through environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017` |
+| `MONGODB_DATABASE` | Database name | `edi_processor` |
+| `REDIS_HOST` | Redis host | `localhost` |
+| `REDIS_PORT` | Redis port | `6379` |
+| `REDIS_PASSWORD` | Redis password | `` |
+| `REDIS_DB` | Redis database number | `0` |
+| `WORKER_MAX_RETRIES` | Maximum retry attempts | `3` |
+| `WORKER_POLL_INTERVAL` | Queue poll interval (seconds) | `1` |
+| `LOG_LEVEL` | Logging level | `info` |
+
+## Development
+
+### Build
+```bash
+# Build API server
+make build
+
+# Build worker
+make build-worker
+```
+
+### Run Tests
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage
+make test-coverage
+```
+
+### View Logs
+```bash
+# Docker logs
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f api
+docker-compose logs -f worker
+```
+
+### Stop Services
+```bash
+docker-compose down
+
+# Remove volumes too
+docker-compose down -v
+```
+
+## Monitoring
+
+The system exposes Prometheus metrics:
+
+- **API Metrics**: http://localhost:8080/metrics
+- **Worker Metrics**: http://localhost:9091/metrics
+
+Available metrics:
+- `edi_jobs_total` - Total number of jobs by status
+- Standard Go runtime metrics
+
+## How It Works
+
+1. **Job Creation**
+   - User uploads an EDI file via POST /jobs
+   - API server saves the job to MongoDB with status "pending"
+   - Job ID is added to Redis queue
+   - Job ID is returned to the user
+
+2. **Job Processing**
+   - Worker polls Redis queue for job IDs
+   - Worker retrieves job details from MongoDB
+   - Worker updates status to "processing"
+   - Worker parses the EDI file
+   - Worker saves results and updates status to "completed" or "failed"
+
+3. **Retry Logic**
+   - If parsing fails, job is marked as "pending" again
+   - Retry count is incremented
+   - Job is re-queued for processing
+   - After 3 failed attempts, job is marked as "failed"
 
 ## Troubleshooting
 
+### API not starting
+- Check if port 8080 is available
+- Verify MongoDB and Redis are running
+- Check logs: `docker-compose logs api`
+
 ### Worker not processing jobs
-
-1. Check Redis connection:
-```bash
-redis-cli PING
-```
-
-2. Check MongoDB connection:
-```bash
-mongosh --eval "db.adminCommand('ping')"
-```
-
-3. Verify queue has jobs:
-```bash
-redis-cli LLEN edi:jobs:queue
-```
+- Check Redis connection: `docker exec -it edi-redis redis-cli PING`
+- Check MongoDB connection: `docker exec -it edi-mongodb mongosh --eval "db.adminCommand('ping')"`
+- Verify queue has jobs: `docker exec -it edi-redis redis-cli LLEN edi:jobs:queue`
+- Check worker logs: `docker-compose logs worker`
 
 ### Jobs stuck in processing
+- Restart worker: `docker-compose restart worker`
+- Check for parsing errors in worker logs
 
-- Check worker logs for errors
-- Verify job exists in MongoDB
-- Check if worker crashed (no graceful shutdown)
+## Future Improvements
 
-### High error rate
-
-- Validate EDI file format
-- Check MongoDB write permissions
-- Review error logs for parsing issues
-
-## Performance Tuning
-
-- **Poll Interval**: Reduce for lower latency, increase to reduce Redis load
-- **Concurrent Workers**: Run multiple worker instances for higher throughput
-- **Batch Processing**: Group small files for efficient processing
+- Add authentication and authorization
+- Implement rate limiting
+- Add job expiration/cleanup
+- Support multiple EDI file formats
+- Add webhooks for job completion notifications
+- Implement horizontal scaling for workers
 
 ## License
 
 MIT License
-
-## Support
-
-For issues and questions, please create an issue in the repository.

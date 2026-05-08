@@ -2,17 +2,14 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: edi-config
-  namespace: edi-processing
+  namespace: edi
 data:
-  MONGODB_URI: "mongodb://edi-mongodb:27017"
+  MONGODB_URI: "mongodb://mongodb:27017"
   MONGODB_DATABASE: "edi_processor"
-  REDIS_HOST: "edi-redis"
+  REDIS_HOST: "redis"
   REDIS_PORT: "6379"
-  REDIS_PASSWORD: ""
   REDIS_DB: "0"
-  LOG_LEVEL: "info"
   WORKER_MAX_RETRIES: "3"
   WORKER_POLL_INTERVAL: "1"
-  WORKER_INITIAL_BACKOFF: "2"
   WORKER_SHUTDOWN_TIMEOUT: "30"
-  METRICS_PORT: "9091"
+  LOG_LEVEL: "info"

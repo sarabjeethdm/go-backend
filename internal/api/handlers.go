@@ -7,9 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"log"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/sarabjeet/golang-backend-task/internal/logger"
 	"github.com/sarabjeet/golang-backend-task/internal/metrics"
 	"github.com/sarabjeet/golang-backend-task/internal/models"
 	"github.com/sarabjeet/golang-backend-task/internal/queue"
@@ -45,10 +46,7 @@ type CreateJobResponse struct {
 }
 
 func (h *Handler) HealthCheck(c *gin.Context) {
-	logger.WithFields(map[string]interface{}{
-		"method": c.Request.Method,
-		"path":   c.Request.URL.Path,
-	}).Info("Health check request")
+	log.Printf("Health check request: method=%s path=%s", c.Request.Method, c.Request.URL.Path)
 
 	c.JSON(http.StatusOK, HealthResponse{
 		Status:    "healthy",
@@ -58,16 +56,11 @@ func (h *Handler) HealthCheck(c *gin.Context) {
 }
 
 func (h *Handler) CreateJob(c *gin.Context) {
-	logger.WithFields(map[string]interface{}{
-		"method": c.Request.Method,
-		"path":   c.Request.URL.Path,
-	}).Info("Create job request")
+	log.Printf("Create job request: method=%s path=%s", c.Request.Method, c.Request.URL.Path)
 
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
-		logger.WithFields(map[string]interface{}{
-			"error": err.Error(),
-		}).Error("Failed to get file from request")
+		log.Printf("Failed to get file from request: %v", err)
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "invalid_request",
 			Message: "No file provided or invalid file upload",
@@ -86,10 +79,7 @@ func (h *Handler) CreateJob(c *gin.Context) {
 
 	content, err := io.ReadAll(file)
 	if err != nil {
-		logger.WithFields(map[string]interface{}{
-			"error":     err.Error(),
-			"file_name": header.Filename,
-		}).Error("Failed to read file content")
+		log.Printf("Failed to read file content: %v, file_name=%s", err, header.Filename)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "file_read_error",
 			Message: "Failed to read file content",
@@ -112,10 +102,7 @@ func (h *Handler) CreateJob(c *gin.Context) {
 	job := models.NewJob(jobID, header.Filename)
 
 	if err := h.db.SaveJob(c.Request.Context(), job); err != nil {
-		logger.WithFields(map[string]interface{}{
-			"error":  err.Error(),
-			"job_id": jobID,
-		}).Error("Failed to save job to database")
+		log.Printf("Failed to save job to database: %v, job_id=%s", err, jobID)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "database_error",
 			Message: "Failed to save job",
@@ -131,10 +118,7 @@ func (h *Handler) CreateJob(c *gin.Context) {
 	}
 
 	if err := h.queue.Enqueue(c.Request.Context(), jobMsg); err != nil {
-		logger.WithFields(map[string]interface{}{
-			"error":  err.Error(),
-			"job_id": jobID,
-		}).Error("Failed to enqueue job")
+		log.Printf("Failed to enqueue job: %v, job_id=%s", err, jobID)
 
 		job.UpdateStatus(models.StatusFailed, "Failed to enqueue job")
 		h.db.UpdateJob(c.Request.Context(), job)
@@ -146,11 +130,7 @@ func (h *Handler) CreateJob(c *gin.Context) {
 		return
 	}
 
-	logger.WithFields(map[string]interface{}{
-		"job_id":    jobID,
-		"file_name": header.Filename,
-		"file_size": header.Size,
-	}).Info("Job created and enqueued successfully")
+	log.Printf("Job created and enqueued successfully: job_id=%s file_name=%s file_size=%d", jobID, header.Filename, header.Size)
 
 	metrics.RecordJobCreated()
 
@@ -163,11 +143,7 @@ func (h *Handler) CreateJob(c *gin.Context) {
 func (h *Handler) GetJobStatus(c *gin.Context) {
 	jobID := c.Param("job_id")
 
-	logger.WithFields(map[string]interface{}{
-		"method": c.Request.Method,
-		"path":   c.Request.URL.Path,
-		"job_id": jobID,
-	}).Info("Get job status request")
+	log.Printf("Get job status request: method=%s path=%s job_id=%s", c.Request.Method, c.Request.URL.Path, jobID)
 
 	if _, err := uuid.Parse(jobID); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
@@ -187,10 +163,7 @@ func (h *Handler) GetJobStatus(c *gin.Context) {
 			return
 		}
 
-		logger.WithFields(map[string]interface{}{
-			"error":  err.Error(),
-			"job_id": jobID,
-		}).Error("Failed to get job from database")
+		log.Printf("Failed to get job from database: %v, job_id=%s", err, jobID)
 
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "database_error",
@@ -205,11 +178,7 @@ func (h *Handler) GetJobStatus(c *gin.Context) {
 func (h *Handler) GetJobResult(c *gin.Context) {
 	jobID := c.Param("job_id")
 
-	logger.WithFields(map[string]interface{}{
-		"method": c.Request.Method,
-		"path":   c.Request.URL.Path,
-		"job_id": jobID,
-	}).Info("Get job result request")
+	log.Printf("Get job result request: method=%s path=%s job_id=%s", c.Request.Method, c.Request.URL.Path, jobID)
 
 	// Validate job ID format
 	if _, err := uuid.Parse(jobID); err != nil {
@@ -231,10 +200,7 @@ func (h *Handler) GetJobResult(c *gin.Context) {
 			return
 		}
 
-		logger.WithFields(map[string]interface{}{
-			"error":  err.Error(),
-			"job_id": jobID,
-		}).Error("Failed to get job from database")
+		log.Printf("Failed to get job from database: %v, job_id=%s", err, jobID)
 
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "database_error",
@@ -262,10 +228,7 @@ func (h *Handler) GetJobResult(c *gin.Context) {
 			return
 		}
 
-		logger.WithFields(map[string]interface{}{
-			"error":  err.Error(),
-			"job_id": jobID,
-		}).Error("Failed to get result from database")
+		log.Printf("Failed to get result from database: %v, job_id=%s", err, jobID)
 
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "database_error",

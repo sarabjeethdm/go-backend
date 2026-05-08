@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,60 +14,53 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sarabjeet/golang-backend-task/internal/api"
 	"github.com/sarabjeet/golang-backend-task/internal/config"
-	"github.com/sarabjeet/golang-backend-task/internal/logger"
-	"github.com/sarabjeet/golang-backend-task/internal/metrics"
 	"github.com/sarabjeet/golang-backend-task/internal/queue"
 	"github.com/sarabjeet/golang-backend-task/internal/storage"
 )
 
 func main() {
-	logger.Init()
-	logger.Info("Starting EDI Processing API Server")
+	log.Println("Starting EDI Processing API Server")
 
-	metrics.Init()
-	logger.Info("Metrics initialized")
-
+	// Load configuration
 	cfg := config.Load()
-	logger.WithFields(map[string]interface{}{
-		"port":        cfg.Server.Port,
-		"mongodb_uri": cfg.MongoDB.URI,
-		"redis_host":  cfg.Redis.Host,
-		"redis_port":  cfg.Redis.Port,
-	}).Info("Configuration loaded")
+	log.Printf("Configuration loaded - Port: %s, MongoDB: %s\n", cfg.Server.Port, cfg.MongoDB.URI)
 
+	// Initialize MongoDB
 	db, err := storage.NewMongoDB(&cfg.MongoDB)
 	if err != nil {
-		logger.Fatalf("Failed to initialize MongoDB: %v", err)
+		log.Fatalf("Failed to initialize MongoDB: %v", err)
 	}
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := db.Close(ctx); err != nil {
-			logger.Errorf("Failed to close MongoDB connection: %v", err)
+			log.Printf("Failed to close MongoDB: %v", err)
 		}
 	}()
 
+	// Create indexes
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	if err := db.CreateIndexes(ctx); err != nil {
-		logger.Warnf("Failed to create MongoDB indexes: %v", err)
+		log.Printf("Warning: Failed to create MongoDB indexes: %v", err)
 	}
 	cancel()
 
+	// Initialize Redis queue
 	redisQueue, err := queue.NewRedisQueue(&cfg.Redis)
 	if err != nil {
-		logger.Fatalf("Failed to initialize Redis queue: %v", err)
+		log.Fatalf("Failed to initialize Redis queue: %v", err)
 	}
 	defer func() {
 		if err := redisQueue.Close(); err != nil {
-			logger.Errorf("Failed to close Redis connection: %v", err)
+			log.Printf("Failed to close Redis: %v", err)
 		}
 	}()
 
+	// Setup router
 	router := api.SetupRouter(db, redisQueue)
-
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
-	logger.Info("Metrics endpoint configured at /metrics")
 
+	// Configure HTTP server
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Server.Port),
 		Handler:      router,
@@ -74,28 +68,28 @@ func main() {
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
+	// Start server
 	go func() {
-		logger.WithFields(map[string]interface{}{
-			"port": cfg.Server.Port,
-		}).Info("Server started")
-
+		log.Printf("Server started on port %s\n", cfg.Server.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatalf("Failed to start server: %v", err)
+			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()
 
+	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down server...")
+	log.Println("Shutting down server...")
 
+	// Graceful shutdown
 	ctx, cancel = context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		logger.Errorf("Server forced to shutdown: %v", err)
+		log.Printf("Server forced to shutdown: %v", err)
 	}
 
-	logger.Info("Server exited gracefully")
+	log.Println("Server stopped")
 }
